@@ -1,0 +1,205 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.container {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+
+  @include custom-screen(767px) {
+    padding: $spacing-md;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-md;
+  gap: $spacing-md;
+}
+
+.title {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.filterWrapper {
+  position: relative;
+}
+
+.filterButton {
+  @include button-reset;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  transition: border-color $transition-fast, background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    border-color: $color-border-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.filterChevron {
+  color: $color-text-muted;
+}
+
+.filterDropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  box-shadow: $shadow-dropdown;
+  z-index: $z-index-dropdown;
+  min-width: 120px;
+  padding: 4px;
+}
+
+.filterOption {
+  padding: 6px 10px;
+  border-radius: $radius-sm;
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  cursor: pointer;
+  transition: background-color $transition-fast, color $transition-fast;
+
+  &:hover,
+  &:focus-visible {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+    outline: none;
+  }
+
+  &Active {
+    background-color: $color-primary-light;
+    color: $color-primary;
+    font-weight: $font-weight-semibold;
+  }
+}
+
+.chartWrapper {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: 240px;
+
+  @include custom-screen(767px) {
+    height: 250px; // matches required 240-280px on mobile
+  }
+}
+
+.svgChart {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: hidden;
+}
+
+.gridLine {
+  stroke: #f1f5f9;
+  stroke-width: 1;
+}
+
+.yAxisLabel {
+  font-size: 11px;
+  fill: $color-text-muted;
+  font-family: $font-family-base;
+}
+
+.yAxisLabelIntermediate {
+  @media (max-width: 540px) {
+    display: none;
+  }
+}
+
+.xAxisLabel {
+  font-size: 12px;
+  fill: $color-text-secondary;
+  font-family: $font-family-base;
+  transition: fill $transition-fast, font-weight $transition-fast;
+
+  &Active {
+    fill: $color-text-primary;
+    font-weight: $font-weight-semibold;
+  }
+}
+
+.xAxisLabelSecondary {
+  @media (max-width: 480px) {
+    display: none;
+  }
+}
+
+.pointGroup {
+  cursor: pointer;
+}
+
+.hitArea {
+  cursor: pointer;
+}
+
+.circleDot {
+  transition: r $transition-fast, stroke-width $transition-fast;
+}
+
+.tooltipBadge {
+  position: absolute;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  padding: 6px 12px;
+  box-shadow: $shadow-dropdown;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  max-width: calc(100% - 16px);
+  transition: left $transition-base, top $transition-base, transform $transition-base;
+
+  @include reduced-motion;
+}
+
+.tooltipDate {
+  font-size: 11px;
+  color: $color-text-muted;
+  margin-bottom: 2px;
+  line-height: 1.2;
+}
+
+.tooltipAmount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  line-height: 1.2;
+}
+
+.tooltipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: $radius-full;
+  background-color: $color-primary;
+  flex-shrink: 0;
+}

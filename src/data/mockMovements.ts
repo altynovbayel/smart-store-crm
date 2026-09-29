@@ -1,0 +1,92 @@
+import type { WarehouseMovement } from '../types';
+
+export const mockProductMovements: Record<string, WarehouseMovement[]> = {
+  'prod-1': [
+    {
+      id: 'mov-1',
+      documentNumber: 'ПР-2026-089',
+      type: 'income',
+      typeLabel: 'Приход',
+      productId: 'prod-1',
+      productName: 'Чехол iPhone 15 Pro',
+      quantity: 50,
+      unit: 'шт.',
+      reason: 'Поступление от поставщика Baseus Central Asia',
+      createdAt: '22.09.2026 11:30',
+      author: 'Администратор',
+    },
+    {
+      id: 'mov-2',
+      documentNumber: 'ЧЕК-#0001256',
+      type: 'outcome',
+      typeLabel: 'Продажа',
+      productId: 'prod-1',
+      productName: 'Чехол iPhone 15 Pro',
+      quantity: -1,
+      unit: 'шт.',
+      reason: 'Розничная продажа клиенту',
+      createdAt: '23.09.2026 16:42',
+      author: 'Кассир-продавец',
+    },
+    {
+      id: 'mov-3',
+      documentNumber: 'ИНВ-2026-012',
+      type: 'adjustment',
+      typeLabel: 'Корректировка',
+      productId: 'prod-1',
+      productName: 'Чехол iPhone 15 Pro',
+      quantity: 7,
+      unit: 'шт.',
+      reason: 'Плановая инвентаризация витрины',
+      createdAt: '20.09.2026 09:15',
+      author: 'Администратор',
+    },
+  ],
+  'prod-2': [
+    {
+      id: 'mov-4',
+      documentNumber: 'ПР-2026-075',
+      type: 'income',
+      typeLabel: 'Приход',
+      productId: 'prod-2',
+      productName: 'Кабель Type-C 1 м',
+      quantity: 100,
+      unit: 'шт.',
+      reason: 'Поступление от поставщика Hoco Official',
+      createdAt: '18.09.2026 14:20',
+      author: 'Администратор',
+    },
+    {
+      id: 'mov-5',
+      documentNumber: 'ЧЕК-#0001255',
+      type: 'outcome',
+      typeLabel: 'Продажа',
+      productId: 'prod-2',
+      productName: 'Кабель Type-C 1 м',
+      quantity: -2,
+      unit: 'шт.',
+      reason: 'Розничная продажа',
+      createdAt: '23.09.2026 15:18',
+      author: 'Кассир-продавец',
+    },
+  ],
+  'prod-5': [
+    {
+      id: 'mov-6',
+      documentNumber: 'СП-2026-004',
+      type: 'write_off',
+      typeLabel: 'Списание',
+      productId: 'prod-5',
+      productName: 'Наушники TWS Pro',
+      quantity: -1,
+      unit: 'шт.',
+      reason: 'Заводской брак (не заряжается левый наушник)',
+      createdAt: '21.09.2026 18:00',
+      author: 'Администратор',
+    },
+  ],
+};
+
+export const initialWarehouseMovements: WarehouseMovement[] = Object.values(
+  mockProductMovements
+).flat();

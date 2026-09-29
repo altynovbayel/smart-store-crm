@@ -1,0 +1,81 @@
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xl;
+  padding-bottom: $spacing-2xl;
+  width: 100%;
+  min-width: 0;
+
+  @include custom-screen(768px) {
+    gap: $spacing-md;
+    padding-bottom: $spacing-xl;
+  }
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $spacing-lg;
+  width: 100%;
+  min-width: 0;
+
+  // 768px - 1199px -> 2 columns
+  @media (min-width: 768px) and (max-width: 1199px) {
+    grid-template-columns: repeat(2, 1fr);
+    gap: $spacing-md;
+  }
+
+  // 390px - 767px -> 2 columns
+  @media (min-width: 390px) and (max-width: 767px) {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  // under 389px -> 1 column
+  @media (max-width: 389px) {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+.twoColumnGrid {
+  display: grid;
+  grid-template-columns: 1.65fr 1fr;
+  gap: $spacing-lg;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+
+  @include custom-screen(1024px) {
+    grid-template-columns: 1fr;
+    gap: $spacing-md;
+  }
+
+  > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+.chartCol,
+.salesCol {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sideCol {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+}

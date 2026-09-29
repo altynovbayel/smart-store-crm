@@ -1,0 +1,90 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.paginationContainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md 0;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.infoText {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.navBtn {
+  @include button-reset;
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  color: $color-text-secondary;
+  transition: all $transition-fast;
+
+  &:hover:not(:disabled) {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+    border-color: $color-border-hover;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.pageBtn {
+  @include button-reset;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  color: $color-text-primary;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  transition: all $transition-fast;
+
+  &:hover:not(.activePageBtn) {
+    background-color: $color-surface-hover;
+    border-color: $color-border-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.activePageBtn {
+  background-color: $color-primary;
+  border-color: $color-primary;
+  color: #ffffff;
+  font-weight: $font-weight-semibold;
+
+  &:hover {
+    background-color: $color-primary-hover;
+  }
+}
+
+.ellipsis {
+  padding: 0 4px;
+  color: $color-text-muted;
+  font-size: $font-size-xs;
+  user-select: none;
+}

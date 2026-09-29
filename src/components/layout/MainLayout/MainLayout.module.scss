@@ -1,0 +1,44 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.layoutWrapper {
+  display: flex;
+  min-height: 100vh;
+  background-color: $color-background;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.contentArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: $sidebar-width;
+  min-height: 100vh;
+  overflow-x: hidden;
+
+  @include custom-screen(1023px) {
+    margin-left: 0;
+  }
+}
+
+.pageContainer {
+  flex: 1;
+  padding: $spacing-xl;
+  max-width: $container-max-width;
+  width: 100%;
+  margin: 0 auto;
+  min-width: 0;
+  box-sizing: border-box;
+
+  @include custom-screen(768px) {
+    padding: $spacing-md;
+  }
+
+  @include custom-screen(480px) {
+    padding: 12px 10px;
+  }
+}

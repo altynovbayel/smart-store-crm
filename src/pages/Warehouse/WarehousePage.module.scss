@@ -1,0 +1,72 @@
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.warehousePage {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xl;
+  padding-bottom: $spacing-2xl;
+  width: 100%;
+  min-width: 0;
+
+  @include custom-screen(768px) {
+    gap: $spacing-md;
+    padding-bottom: $spacing-xl;
+  }
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+}
+
+.headerTitles {
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+
+  @include custom-screen(768px) {
+    font-size: 1.35rem;
+  }
+}
+
+.subtitle {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  margin-top: 3px;
+}
+
+.addBtnHeader {
+  @include button-reset;
+  height: 38px;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: $radius-md;
+  background-color: $color-primary;
+  color: #ffffff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  box-shadow: 0 1px 3px rgba(14, 165, 233, 0.3);
+  transition: background-color $transition-fast, box-shadow $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+
+  @media (max-width: 640px) {
+    display: none; // On small mobile, add button in toolbar is used
+  }
+}

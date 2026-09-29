@@ -1,0 +1,263 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.overlay {
+  display: none;
+
+  @include custom-screen(1023px) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background-color: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: $z-index-overlay;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity $transition-base;
+
+    &Visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  @include reduced-motion;
+}
+
+.sidebar {
+  width: $sidebar-width;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background-color: $color-surface;
+  border-right: 1px solid $color-border;
+  display: flex;
+  flex-direction: column;
+  z-index: $z-index-drawer;
+  user-select: none;
+  transition: transform $transition-smooth;
+
+  @include custom-screen(1023px) {
+    transform: translateX(-100%);
+    box-shadow: $shadow-drawer;
+
+    &Open {
+      transform: translateX(0);
+    }
+  }
+
+  @include reduced-motion;
+}
+
+.brandContainer {
+  height: $header-height;
+  padding: 0 $spacing-lg;
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  border-bottom: 1px solid transparent;
+}
+
+.logoBadge {
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-md;
+  background-color: $color-primary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(14, 165, 233, 0.25);
+}
+
+.logoLetter {
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: $font-weight-bold;
+  line-height: 1;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.brandTitle {
+  font-size: $font-size-md;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  line-height: 1.2;
+  @include truncate;
+}
+
+.brandSubtitle {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-regular;
+  color: $color-text-secondary;
+  line-height: 1.2;
+  @include truncate;
+}
+
+.closeDrawerButton {
+  @include button-reset;
+  display: none;
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-sm;
+  color: $color-text-secondary;
+  transition: background-color $transition-fast, color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+
+  @include custom-screen(1023px) {
+    display: inline-flex;
+  }
+}
+
+.navigation {
+  flex: 1;
+  padding: $spacing-md $spacing-sm;
+  overflow-y: auto;
+}
+
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navItem {
+  list-style: none;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: 9px 12px;
+  border-radius: $radius-md;
+  color: $color-text-secondary;
+  font-size: $font-size-base;
+  font-weight: $font-weight-medium;
+  transition: background-color $transition-fast, color $transition-fast;
+  position: relative;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+
+  &Active {
+    background-color: $color-primary-light;
+    color: $color-primary;
+    font-weight: $font-weight-semibold;
+
+    &:hover {
+      background-color: $color-primary-light;
+      color: $color-primary-hover;
+    }
+
+    .navIcon {
+      color: $color-primary;
+    }
+  }
+}
+
+.navIcon {
+  flex-shrink: 0;
+  color: inherit;
+  transition: color $transition-fast;
+}
+
+.navLabel {
+  @include truncate;
+}
+
+.userFooter {
+  padding: $spacing-md $spacing-lg;
+  border-top: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-xs;
+  background-color: $color-surface;
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.userAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-full;
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $color-text-secondary;
+  flex-shrink: 0;
+}
+
+.gearIcon {
+  color: $color-text-secondary;
+}
+
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.userName {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  line-height: 1.2;
+  @include truncate;
+}
+
+.userRole {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  line-height: 1.2;
+  @include truncate;
+}
+
+.logoutButton {
+  @include button-reset;
+  width: 30px;
+  height: 30px;
+  border-radius: $radius-sm;
+  color: $color-text-muted;
+  transition: background-color $transition-fast, color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-danger;
+  }
+
+  &:focus-visible {
+    @include focus-ring($color-danger);
+  }
+}

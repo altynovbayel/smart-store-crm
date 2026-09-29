@@ -1,0 +1,177 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(3px);
+  z-index: $z-index-modal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-md;
+}
+
+.modalCard {
+  width: 100%;
+  max-width: 480px;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-drawer;
+  overflow: hidden;
+  position: relative;
+  animation: modalEnter $transition-fast ease-out;
+
+  @include reduced-motion;
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.content {
+  padding: $spacing-xl;
+  display: flex;
+  gap: $spacing-md;
+  position: relative;
+}
+
+.iconBox {
+  width: 44px;
+  height: 44px;
+  border-radius: $radius-full;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.iconWarn {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.iconArchive {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.textGroup {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.title {
+  font-size: $font-size-md;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  margin-bottom: 6px;
+}
+
+.description {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  line-height: 1.4;
+}
+
+.productName {
+  color: $color-text-primary;
+}
+
+.stockAlertBox {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: $radius-md;
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  strong {
+    color: #92400e;
+    font-size: 12.5px;
+  }
+
+  span {
+    color: #b45309;
+    font-size: 11.5px;
+    line-height: 1.3;
+  }
+}
+
+.closeBtn {
+  @include button-reset;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: $radius-sm;
+  color: $color-text-muted;
+
+  &:hover {
+    color: $color-text-primary;
+  }
+}
+
+.footer {
+  padding: $spacing-md $spacing-xl;
+  border-top: 1px solid $color-border;
+  background-color: $color-surface-hover;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+}
+
+.cancelBtn {
+  @include button-reset;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+
+  &:hover {
+    background-color: #f1f5f9;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.archiveBtn {
+  @include button-reset;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: $radius-md;
+  background-color: #d97706;
+  color: #ffffff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.3);
+
+  &:hover {
+    background-color: #b45309;
+  }
+
+  &:focus-visible {
+    @include focus-ring(#d97706);
+  }
+}

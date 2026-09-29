@@ -1,0 +1,75 @@
+@use './variables' as *;
+
+// Media query mixins
+@mixin mobile {
+  @media (max-width: ($bp-tablet - 1px)) {
+    @content;
+  }
+}
+
+@mixin tablet {
+  @media (min-width: $bp-tablet) and (max-width: ($bp-laptop - 1px)) {
+    @content;
+  }
+}
+
+@mixin laptop {
+  @media (min-width: $bp-laptop) and (max-width: ($bp-wide - 1px)) {
+    @content;
+  }
+}
+
+@mixin desktop {
+  @media (min-width: $bp-laptop) {
+    @content;
+  }
+}
+
+@mixin custom-screen($max-width) {
+  @media (max-width: $max-width) {
+    @content;
+  }
+}
+
+// Interactive states
+@mixin focus-ring($color: $color-primary) {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba($color, 0.2), 0 0 0 1px $color;
+}
+
+@mixin button-reset {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  user-select: none;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}
+
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// Prefers reduced motion
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

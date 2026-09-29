@@ -1,0 +1,225 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.card {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-md;
+  box-shadow: $shadow-card;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+  min-width: 0;
+  max-width: 100%;
+
+  &:hover {
+    border-color: $color-border-hover;
+    box-shadow: $shadow-md;
+  }
+
+  // Tablet & Mobile styles (390px - 767px: 2 columns)
+  @media (max-width: 767px) {
+    padding: 12px 10px;
+    gap: 8px;
+  }
+
+  // Very small 2-col screens (390px - 440px)
+  @media (max-width: 440px) {
+    padding: 10px 8px;
+    gap: 7px;
+  }
+
+  // 1-column layout under 389px (e.g. 360px)
+  @media (max-width: 389px) {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+}
+
+.iconContainer {
+  width: 48px;
+  height: 48px;
+  border-radius: $radius-lg;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &.type-revenue {
+    background-color: #e0f2fe;
+    color: #0284c7;
+  }
+
+  &.type-sales {
+    background-color: #dcfce7;
+    color: #16a34a;
+  }
+
+  &.type-warehouse {
+    background-color: #e0f2fe;
+    color: #0284c7;
+  }
+
+  &.type-alert {
+    background-color: #fef3c7;
+    color: #d97706;
+  }
+
+  @media (max-width: 767px) {
+    width: 38px;
+    height: 38px;
+    border-radius: $radius-md;
+
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  @media (max-width: 440px) {
+    width: 34px;
+    height: 34px;
+    border-radius: $radius-sm;
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  @media (max-width: 389px) {
+    width: 40px;
+    height: 40px;
+    border-radius: $radius-md;
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
+  }
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  font-weight: $font-weight-medium;
+  margin-bottom: 4px;
+  line-height: 1.2;
+
+  @media (max-width: 767px) {
+    font-size: 11.5px;
+    margin-bottom: 2px;
+  }
+
+  @media (max-width: 440px) {
+    font-size: 11px;
+  }
+
+  @media (max-width: 389px) {
+    font-size: 12px;
+  }
+}
+
+.value {
+  font-size: 1.5rem; // ~24px
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  line-height: 1.2;
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+
+  @media (max-width: 767px) {
+    font-size: 1.15rem; // ~18px
+    margin-bottom: 3px;
+  }
+
+  @media (max-width: 440px) {
+    font-size: 1.05rem; // ~16.8px
+    margin-bottom: 2px;
+  }
+
+  @media (max-width: 389px) {
+    font-size: 1.35rem; // ~21px
+    margin-bottom: 4px;
+  }
+}
+
+.trendRow {
+  display: flex;
+  align-items: center;
+  gap: 4px 6px;
+  flex-wrap: wrap;
+
+  @media (max-width: 767px) {
+    gap: 2px 4px;
+  }
+}
+
+.trendBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  line-height: 1;
+
+  @media (max-width: 767px) {
+    font-size: 11px;
+  }
+
+  @media (max-width: 440px) {
+    font-size: 10px;
+  }
+
+  @media (max-width: 389px) {
+    font-size: 11px;
+  }
+}
+
+.trendPositive {
+  color: #16a34a;
+}
+
+.trendNegative {
+  color: #ef4444;
+}
+
+.trendIcon {
+  flex-shrink: 0;
+
+  @media (max-width: 440px) {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.trendValue {
+  font-weight: $font-weight-semibold;
+}
+
+.trendPeriod {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  line-height: 1.2;
+
+  @media (max-width: 767px) {
+    font-size: 10.5px;
+  }
+
+  @media (max-width: 440px) {
+    font-size: 10px;
+  }
+
+  @media (max-width: 389px) {
+    font-size: 11px;
+  }
+}

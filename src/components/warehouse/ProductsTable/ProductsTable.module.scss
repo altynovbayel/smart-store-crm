@@ -1,0 +1,415 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.tableCard {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-card;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tableResponsiveWrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 960px; // table itself has min-width for comfortable mobile horizontal scrolling
+  text-align: left;
+
+  thead tr {
+    border-bottom: 1px solid $color-border;
+  }
+
+  th {
+    padding: 12px 14px;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-medium;
+    color: $color-text-secondary;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color $transition-fast;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background-color: #f8fafc;
+    }
+  }
+
+  td {
+    padding: 12px 14px;
+    font-size: $font-size-sm;
+    color: $color-text-primary;
+    vertical-align: middle;
+  }
+}
+
+.tableRow {
+  // Styles inherited from tbody tr
+}
+
+.productTh,
+.skuTh,
+.categoryTh,
+.priceTh,
+.stockTh,
+.statusTh {
+  // Styles inherited from th
+}
+
+.actionsTh {
+  width: 48px;
+  text-align: right;
+  padding-right: 16px;
+}
+
+.sortableHeaderBtn {
+  @include button-reset;
+  gap: 6px;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.sortActive {
+  color: $color-primary;
+}
+
+.sortInactive {
+  color: $color-text-muted;
+}
+
+.productCell {
+  min-width: 220px;
+}
+
+.productFlex {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.productMeta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.productName {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  line-height: 1.3;
+}
+
+.productDesc {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  line-height: 1.2;
+  margin-top: 2px;
+  @include truncate;
+  max-width: 220px;
+}
+
+.skuCell {
+  white-space: nowrap;
+}
+
+.skuText {
+  display: block;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  font-family: monospace;
+}
+
+.barcodeText {
+  display: block;
+  font-size: 11px;
+  color: $color-text-muted;
+  margin-top: 2px;
+  font-family: monospace;
+}
+
+.categoryCell {
+  white-space: nowrap;
+}
+
+.categoryBadge {
+  display: inline-flex;
+  padding: 3px 10px;
+  border-radius: $radius-full;
+  font-size: 11.5px;
+  font-weight: $font-weight-medium;
+  line-height: 1.3;
+}
+
+.cat-cases {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.cat-cables {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+}
+
+.cat-glass {
+  background-color: #e0f2fe;
+  color: #0284c7;
+}
+
+.cat-powerbanks {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.cat-headphones {
+  background-color: #f3e8ff;
+  color: #6b21a8;
+}
+
+.cat-adapters {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.cat-memory {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.cat-holders {
+  background-color: #ffedd5;
+  color: #c2410c;
+}
+
+.purchaseCell {
+  white-space: nowrap;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+}
+
+.sellingCell {
+  white-space: nowrap;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.stockCell {
+  white-space: nowrap;
+}
+
+.stockValue {
+  display: block;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.minStockText {
+  display: block;
+  font-size: 11px;
+  color: $color-text-muted;
+  margin-top: 2px;
+}
+
+.statusCell {
+  white-space: nowrap;
+}
+
+.actionsCell {
+  width: 48px;
+  text-align: right;
+  padding-right: 16px;
+}
+
+.actionMenuWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.moreBtn {
+  @include button-reset;
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-sm;
+  color: $color-text-secondary;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.actionDropdownPortal {
+  position: fixed;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  box-shadow: $shadow-dropdown;
+  z-index: $z-index-dropdown;
+  min-width: 196px;
+  padding: 4px;
+  animation: dropdownEnter $transition-fast ease-out;
+
+  @include reduced-motion;
+}
+
+@keyframes dropdownEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.menuItem {
+  @include button-reset;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: $radius-sm;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.menuIcon {
+  color: $color-text-secondary;
+  flex-shrink: 0;
+}
+
+.menuDivider {
+  height: 1px;
+  background-color: $color-border;
+  margin: 4px 0;
+}
+
+.menuItemDanger {
+  color: $color-danger;
+
+  .menuIcon {
+    color: $color-danger;
+  }
+
+  &:hover {
+    background-color: $color-danger-light;
+  }
+}
+
+.menuItemArchive {
+  color: #b45309;
+
+  .menuIcon {
+    color: #b45309;
+  }
+
+  &:hover {
+    background-color: #fef3c7;
+  }
+}
+
+// Empty state
+.emptyContainer {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-2xl $spacing-xl;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyIconBox {
+  width: 64px;
+  height: 64px;
+  border-radius: $radius-lg;
+  background-color: $color-surface-hover;
+  color: $color-text-muted;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $spacing-md;
+}
+
+.emptyIcon {
+  color: $color-text-muted;
+}
+
+.emptyTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: 6px;
+}
+
+.emptySubtitle {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  max-width: 440px;
+  margin-bottom: $spacing-lg;
+  line-height: 1.4;
+}
+
+.emptyResetBtn {
+  @include button-reset;
+  padding: 8px 16px;
+  background-color: $color-primary;
+  color: #ffffff;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

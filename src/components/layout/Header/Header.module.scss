@@ -1,0 +1,229 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.header {
+  height: $header-height;
+  background-color: $color-surface;
+  border-bottom: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 $spacing-xl;
+  position: sticky;
+  top: 0;
+  z-index: $z-index-header;
+  gap: $spacing-md;
+
+  @include custom-screen(768px) {
+    padding: 0 $spacing-md;
+  }
+
+  @include custom-screen(420px) {
+    padding: 0 10px;
+    gap: 8px;
+  }
+}
+
+.leftSection {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  min-width: 0;
+}
+
+.menuButton {
+  @include button-reset;
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  color: $color-text-secondary;
+  background-color: $color-surface;
+  transition: background-color $transition-fast, color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+
+  @include custom-screen(1023px) {
+    display: inline-flex;
+  }
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  min-width: 0;
+
+  @include custom-screen(640px) {
+    gap: $spacing-xs;
+  }
+}
+
+.pageTitle {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  line-height: 1.2;
+  @include truncate;
+
+  @include custom-screen(768px) {
+    font-size: $font-size-lg;
+  }
+}
+
+.dateSeparator {
+  width: 1px;
+  height: 16px;
+  background-color: $color-border;
+  flex-shrink: 0;
+
+  @include custom-screen(640px) {
+    display: none;
+  }
+}
+
+.currentDate {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  white-space: nowrap;
+
+  @include custom-screen(640px) {
+    display: none;
+  }
+}
+
+.rightSection {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  flex-shrink: 0;
+
+  @include custom-screen(640px) {
+    gap: $spacing-xs;
+  }
+}
+
+.searchForm {
+  position: relative;
+
+  @include custom-screen(560px) {
+    display: none;
+  }
+}
+
+.searchFieldWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  color: $color-text-muted;
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 280px;
+  height: 38px;
+  padding: 0 12px 0 36px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+
+  &::placeholder {
+    color: $color-text-muted;
+  }
+
+  &:hover {
+    border-color: $color-border-hover;
+  }
+
+  &:focus {
+    @include focus-ring;
+  }
+
+  @include custom-screen(900px) {
+    width: 200px;
+  }
+}
+
+.iconButton {
+  @include button-reset;
+  width: 38px;
+  height: 38px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  color: $color-text-secondary;
+  position: relative;
+  transition: background-color $transition-fast, color $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.notificationDot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: $radius-full;
+  background-color: $color-danger;
+  border: 1.5px solid $color-surface;
+}
+
+.userDropdownButton {
+  @include button-reset;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 3px;
+  border-radius: $radius-full;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.avatarCircle {
+  width: 34px;
+  height: 34px;
+  border-radius: $radius-full;
+  background-color: #cbd5e1;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  user-select: none;
+}
+
+.chevronIcon {
+  color: $color-text-secondary;
+}

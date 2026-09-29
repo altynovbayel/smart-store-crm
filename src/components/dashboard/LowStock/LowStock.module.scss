@@ -1,0 +1,139 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.container {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+
+  @include custom-screen(767px) {
+    padding: $spacing-md;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-md;
+  gap: $spacing-md;
+}
+
+.title {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.actionLink {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-primary;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-primary-hover;
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.tableResponsiveWrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 320px;
+  text-align: left;
+
+  thead tr {
+    border-bottom: 1px solid $color-border;
+  }
+
+  th {
+    padding: 8px 8px;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-medium;
+    color: $color-text-secondary;
+    white-space: nowrap;
+
+    &:first-child {
+      padding-left: 0;
+    }
+
+    &:last-child {
+      text-align: right;
+      padding-right: 2px;
+    }
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color $transition-fast;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background-color: #f8fafc;
+    }
+  }
+
+  td {
+    padding: 10px 8px;
+    font-size: $font-size-sm;
+    color: $color-text-primary;
+    white-space: nowrap;
+    vertical-align: middle;
+
+    &:first-child {
+      padding-left: 0;
+    }
+
+    &:last-child {
+      text-align: right;
+      padding-right: 2px;
+    }
+  }
+}
+
+.productCell {
+  font-weight: $font-weight-medium;
+}
+
+.stockCell {
+  font-weight: $font-weight-semibold;
+}
+
+.stockCritical {
+  color: $color-danger;
+}
+
+.stockWarning {
+  color: $color-warning-dark;
+}
+
+.thresholdCell {
+  color: $color-text-secondary;
+}
+
+.statusCell {
+  text-align: right;
+  padding-right: 2px;
+}
