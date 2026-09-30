@@ -21,15 +21,15 @@ export const LowStock = ({ items }: LowStockProps) => {
         <table className={styles.table}>
           <thead>
             <tr>
-              <th scope="col" className={styles.colProduct}>Товар</th>
-              <th scope="col" className={styles.colStock}>Остаток</th>
-              <th scope="col" className={styles.colThreshold}>Порог</th>
-              <th scope="col" className={styles.colStatus}>Статус</th>
+              <th scope="col">Товар</th>
+              <th scope="col">Остаток</th>
+              <th scope="col">Порог</th>
+              <th scope="col">Статус</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} className={styles.row}>
+              <tr key={item.id}>
                 <td className={styles.productCell}>{item.name}</td>
                 <td
                   className={`${styles.stockCell} ${

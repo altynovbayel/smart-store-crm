@@ -17,13 +17,13 @@ export const StatCard = ({ metric }: StatCardProps) => {
   const renderIcon = () => {
     switch (metric.icon) {
       case 'revenue':
-        return <BarChart2 size={24} className={styles.iconRevenue} />;
+        return <BarChart2 size={24} />;
       case 'sales':
-        return <ShoppingCart size={24} className={styles.iconSales} />;
+        return <ShoppingCart size={24} />;
       case 'warehouse':
-        return <Package size={24} className={styles.iconWarehouse} />;
+        return <Package size={24} />;
       case 'alert':
-        return <AlertTriangle size={24} className={styles.iconAlert} />;
+        return <AlertTriangle size={24} />;
       default:
         return null;
     }

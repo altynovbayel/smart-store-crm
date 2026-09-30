@@ -19,6 +19,7 @@ import { Badge } from '../../common/Badge/Badge';
 import { ProductThumbnail } from '../../common/ProductThumbnail/ProductThumbnail';
 import { formatCurrency } from '../../../utils/formatUtils';
 import { getStockStatusLabel } from '../../../utils/productUtils';
+import { isElementVisible } from '../../../utils/focusUtils';
 import styles from './ProductsTable.module.scss';
 
 export interface ProductsTableProps {
@@ -54,7 +55,7 @@ export const ProductsTable = ({
     const trigger = activeTriggerRef.current;
     setActiveMenuProduct(null);
     setMenuCoords(null);
-    if (restoreFocus && trigger && document.contains(trigger)) {
+    if (restoreFocus && trigger && document.contains(trigger) && isElementVisible(trigger)) {
       trigger.focus();
     }
   };
@@ -117,7 +118,12 @@ export const ProductsTable = ({
     if (!activeMenuProduct) return;
 
     const handleScrollOrResize = () => {
-      closeMenu(false);
+      const isFocusInside = Boolean(
+        dropdownMenuRef.current &&
+        document.activeElement &&
+        dropdownMenuRef.current.contains(document.activeElement)
+      );
+      closeMenu(isFocusInside);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -215,6 +221,18 @@ export const ProductsTable = ({
     }
   };
 
+  const handleEmptyReset = () => {
+    onResetFilters();
+    requestAnimationFrame(() => {
+      const searchInput = document.querySelector<HTMLInputElement>(
+        'input[type="search"]'
+      );
+      if (searchInput && document.contains(searchInput)) {
+        searchInput.focus();
+      }
+    });
+  };
+
   if (products.length === 0) {
     return (
       <div className={styles.emptyContainer}>
@@ -228,7 +246,7 @@ export const ProductsTable = ({
         <button
           type="button"
           className={styles.emptyResetBtn}
-          onClick={onResetFilters}
+          onClick={handleEmptyReset}
         >
           Сбросить фильтры
         </button>
@@ -242,7 +260,7 @@ export const ProductsTable = ({
         <table className={styles.table} aria-label="Список товаров склада">
           <thead>
             <tr>
-              <th scope="col" className={styles.productTh}>
+              <th scope="col">
                 <button
                   type="button"
                   className={styles.sortableHeaderBtn}
@@ -253,9 +271,9 @@ export const ProductsTable = ({
                   {renderSortIndicator('name')}
                 </button>
               </th>
-              <th scope="col" className={styles.skuTh}>Артикул / Штрихкод</th>
-              <th scope="col" className={styles.categoryTh}>Категория</th>
-              <th scope="col" className={styles.priceTh}>
+              <th scope="col">Артикул / Штрихкод</th>
+              <th scope="col">Категория</th>
+              <th scope="col">
                 <button
                   type="button"
                   className={styles.sortableHeaderBtn}
@@ -266,7 +284,7 @@ export const ProductsTable = ({
                   {renderSortIndicator('purchasePrice')}
                 </button>
               </th>
-              <th scope="col" className={styles.priceTh}>
+              <th scope="col">
                 <button
                   type="button"
                   className={styles.sortableHeaderBtn}
@@ -277,7 +295,7 @@ export const ProductsTable = ({
                   {renderSortIndicator('sellingPrice')}
                 </button>
               </th>
-              <th scope="col" className={styles.stockTh}>
+              <th scope="col">
                 <button
                   type="button"
                   className={styles.sortableHeaderBtn}
@@ -288,7 +306,7 @@ export const ProductsTable = ({
                   {renderSortIndicator('stock')}
                 </button>
               </th>
-              <th scope="col" className={styles.statusTh}>Статус</th>
+              <th scope="col">Статус</th>
               <th scope="col" className={styles.actionsTh}>
                 <span className="visually-hidden">Действия</span>
               </th>
@@ -296,7 +314,7 @@ export const ProductsTable = ({
           </thead>
           <tbody>
             {products.map((product) => (
-              <tr key={product.id} className={styles.tableRow}>
+              <tr key={product.id}>
                 {/* Product with Icon & Description */}
                 <td className={styles.productCell}>
                   <div className={styles.productFlex}>

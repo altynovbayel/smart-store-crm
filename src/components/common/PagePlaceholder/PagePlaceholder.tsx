@@ -18,7 +18,7 @@ export const PagePlaceholder = ({
     <div className={styles.container}>
       <div className={styles.card}>
         <div className={styles.iconWrapper}>
-          {icon ?? <Clock size={32} className={styles.defaultIcon} />}
+          {icon ?? <Clock size={32} />}
         </div>
         <h1 className={styles.title}>{title}</h1>
         <p className={styles.subtitle}>{subtitle}</p>

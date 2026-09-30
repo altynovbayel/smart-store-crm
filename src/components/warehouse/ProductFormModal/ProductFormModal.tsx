@@ -177,7 +177,7 @@ export const ProductFormModal = ({
 
       const num = Number(normalized);
       if (!Number.isFinite(num) || Number.isNaN(num) || num < 0 || num > 100_000_000) {
-        newErrors[fieldName] = 'Цена должна быть числом от 0 до 100 000 000 ₽';
+        newErrors[fieldName] = 'Цена должна быть числом от 0 до 100 000 000 сом';
         return null;
       }
 
@@ -202,8 +202,8 @@ export const ProductFormModal = ({
       }
 
       const num = Number(trimmed);
-      if (!Number.isSafeInteger(num) || num < 0 || num > 1_000_000) {
-        newErrors[fieldName] = 'Значение должно быть целым числом от 0 до 1 000 000';
+      if (!Number.isSafeInteger(num) || num < 0 || num > 100_000_000) {
+        newErrors[fieldName] = 'Значение должно быть целым числом от 0 до 100 000 000';
         return null;
       }
 
@@ -258,6 +258,13 @@ export const ProductFormModal = ({
     if (result.isValid && result.data) {
       onSubmit(result.data);
       onClose();
+    } else {
+      requestAnimationFrame(() => {
+        const firstInvalid = modalRef.current?.querySelector<HTMLElement>(
+          '[aria-invalid="true"]'
+        );
+        firstInvalid?.focus();
+      });
     }
   };
 
@@ -305,12 +312,14 @@ export const ProductFormModal = ({
                 className={`${styles.input} ${errors.name ? styles.inputError : ''}`}
                 placeholder="Например: Чехол iPhone 15 Pro Silicone"
                 value={formData.name}
+                aria-invalid={errors.name ? 'true' : undefined}
+                aria-describedby={errors.name ? 'prod-name-error' : undefined}
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
               />
               {errors.name && (
-                <span className={styles.errorText}>
+                <span id="prod-name-error" role="alert" className={styles.errorText}>
                   <AlertCircle size={12} /> {errors.name}
                 </span>
               )}
@@ -328,12 +337,14 @@ export const ProductFormModal = ({
                   className={`${styles.input} ${errors.sku ? styles.inputError : ''}`}
                   placeholder="SS-IP15P-001"
                   value={formData.sku}
+                  aria-invalid={errors.sku ? 'true' : undefined}
+                  aria-describedby={errors.sku ? 'prod-sku-error' : undefined}
                   onChange={(e) =>
                     setFormData({ ...formData, sku: e.target.value })
                   }
                 />
                 {errors.sku && (
-                  <span className={styles.errorText}>
+                  <span id="prod-sku-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.sku}
                   </span>
                 )}
@@ -349,12 +360,14 @@ export const ProductFormModal = ({
                   className={`${styles.input} ${errors.barcode ? styles.inputError : ''}`}
                   placeholder="470001001001"
                   value={formData.barcode}
+                  aria-invalid={errors.barcode ? 'true' : undefined}
+                  aria-describedby={errors.barcode ? 'prod-barcode-error' : undefined}
                   onChange={(e) =>
                     setFormData({ ...formData, barcode: e.target.value })
                   }
                 />
                 {errors.barcode && (
-                  <span className={styles.errorText}>
+                  <span id="prod-barcode-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.barcode}
                   </span>
                 )}
@@ -418,6 +431,8 @@ export const ProductFormModal = ({
                   className={`${styles.input} ${errors.purchasePrice ? styles.inputError : ''}`}
                   value={formData.purchasePrice}
                   placeholder="0.00"
+                  aria-invalid={errors.purchasePrice ? 'true' : undefined}
+                  aria-describedby={errors.purchasePrice ? 'prod-purchase-error' : undefined}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -426,7 +441,7 @@ export const ProductFormModal = ({
                   }
                 />
                 {errors.purchasePrice && (
-                  <span className={styles.errorText}>
+                  <span id="prod-purchase-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.purchasePrice}
                   </span>
                 )}
@@ -443,6 +458,8 @@ export const ProductFormModal = ({
                   className={`${styles.input} ${errors.sellingPrice ? styles.inputError : ''}`}
                   value={formData.sellingPrice}
                   placeholder="0.00"
+                  aria-invalid={errors.sellingPrice ? 'true' : undefined}
+                  aria-describedby={errors.sellingPrice ? 'prod-selling-error' : undefined}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -451,7 +468,7 @@ export const ProductFormModal = ({
                   }
                 />
                 {errors.sellingPrice && (
-                  <span className={styles.errorText}>
+                  <span id="prod-selling-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.sellingPrice}
                   </span>
                 )}
@@ -472,6 +489,8 @@ export const ProductFormModal = ({
                   className={`${styles.input} ${errors.stock ? styles.inputError : ''}`}
                   value={formData.stock}
                   placeholder="0"
+                  aria-invalid={errors.stock ? 'true' : undefined}
+                  aria-describedby={errors.stock ? 'prod-stock-error' : undefined}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -480,7 +499,7 @@ export const ProductFormModal = ({
                   }
                 />
                 {errors.stock && (
-                  <span className={styles.errorText}>
+                  <span id="prod-stock-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.stock}
                   </span>
                 )}
@@ -497,6 +516,8 @@ export const ProductFormModal = ({
                   className={`${styles.input} ${errors.minStockThreshold ? styles.inputError : ''}`}
                   value={formData.minStockThreshold}
                   placeholder="10"
+                  aria-invalid={errors.minStockThreshold ? 'true' : undefined}
+                  aria-describedby={errors.minStockThreshold ? 'prod-min-stock-error' : undefined}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -505,7 +526,7 @@ export const ProductFormModal = ({
                   }
                 />
                 {errors.minStockThreshold && (
-                  <span className={styles.errorText}>
+                  <span id="prod-min-stock-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.minStockThreshold}
                   </span>
                 )}

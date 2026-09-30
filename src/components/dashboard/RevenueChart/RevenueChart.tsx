@@ -240,7 +240,7 @@ export const RevenueChart = ({ data }: RevenueChartProps) => {
             const y = marginTop + chartHeight * (1 - val / maxY);
             const isIntermediate = val === 10000 || val === 30000;
             return (
-              <g key={val} className={styles.gridRow}>
+              <g key={val}>
                 <text
                   x={marginLeft - 10}
                   y={y + 4}

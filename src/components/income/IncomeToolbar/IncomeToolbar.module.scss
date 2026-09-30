@@ -1,0 +1,167 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.toolbarContainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.leftControls {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.searchWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 280px;
+  flex: 1;
+  max-width: 400px;
+
+  @media (max-width: 640px) {
+    max-width: 100%;
+    min-width: 100%;
+  }
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  color: $color-text-muted;
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 38px;
+  padding: 0 32px 0 36px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+
+  &::placeholder {
+    color: $color-text-muted;
+  }
+
+  &:hover {
+    border-color: $color-border-hover;
+  }
+
+  &:focus {
+    @include focus-ring;
+  }
+}
+
+.clearSearchBtn {
+  @include button-reset;
+  position: absolute;
+  right: 10px;
+  color: $color-text-muted;
+  width: 20px;
+  height: 20px;
+  border-radius: $radius-full;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    color: $color-text-primary;
+  }
+}
+
+.selectWrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.select {
+  appearance: none;
+  height: 38px;
+  padding: 0 32px 0 12px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color $transition-fast;
+
+  &:hover {
+    border-color: $color-border-hover;
+  }
+
+  &:focus {
+    @include focus-ring;
+  }
+}
+
+.resetButton {
+  @include button-reset;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: $radius-md;
+  border: 1px dashed $color-border;
+  background-color: transparent;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-danger;
+    border-color: $color-danger;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.rightControls {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.primaryButton {
+  @include button-reset;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: $radius-md;
+  background-color: $color-primary;
+  color: #ffffff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  box-shadow: 0 1px 3px rgba(14, 165, 233, 0.3);
+  transition: background-color $transition-fast, box-shadow $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

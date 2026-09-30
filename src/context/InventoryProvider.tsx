@@ -8,14 +8,17 @@ import type {
   Product,
   ProductFormData,
   WarehouseMovement,
+  IncomeReceipt,
+  IncomeReceiptItem,
+  IncomeReceiptFormData,
 } from '../types';
-import { initialWarehouseProducts } from '../data/mockProducts';
-import { initialWarehouseMovements } from '../data/mockMovements';
+import { createInitialInventoryState } from '../data/initialState';
 import {
   calculateStockStatus,
   getCategoryLabel,
   getIconTypeByCategory,
 } from '../utils/productUtils';
+import { toCents, fromCents } from '../utils/incomeCalculations';
 import {
   InventoryContext,
   type InventoryState,
@@ -33,10 +36,7 @@ const formatMovementDate = (date: Date): string => {
   return `${day}.${month}.${year} ${hours}:${minutes}`;
 };
 
-const initialState: InventoryState = {
-  products: initialWarehouseProducts,
-  movements: initialWarehouseMovements,
-};
+const initialState: InventoryState = createInitialInventoryState();
 
 const inventoryReducer = (
   state: InventoryState,
@@ -167,6 +167,138 @@ const inventoryReducer = (
       };
     }
 
+    case 'ADD_INCOME_RECEIPT': {
+      const data = action.payload;
+
+      // Validate all items atomically
+      if (!data.items || data.items.length === 0) {
+        return state;
+      }
+
+      const seenIds = new Set<string>();
+      for (const item of data.items) {
+        if (seenIds.has(item.productId)) {
+          // Reject duplicate products in single receipt
+          return state;
+        }
+        seenIds.add(item.productId);
+
+        const prod = state.products.find(
+          (p) => p.id === item.productId && !p.isArchived
+        );
+        if (!prod) {
+          return state;
+        }
+        if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+          return state;
+        }
+        if (!Number.isFinite(item.purchasePrice) || item.purchasePrice < 0) {
+          return state;
+        }
+      }
+
+      // Generate sequential receipt number
+      const currentYear = new Date().getFullYear();
+      const nextIndex = state.incomeReceipts.length + 93;
+      const receiptNumber = `ПР-${currentYear}-${String(nextIndex).padStart(3, '0')}`;
+      const nowStr = formatMovementDate(new Date());
+
+      // Build receipt items with exact integer cents calculation
+      let receiptTotalCents = 0;
+      for (const item of data.items) {
+        const lineCents = item.quantity * toCents(item.purchasePrice);
+        if (
+          !Number.isSafeInteger(lineCents) ||
+          !Number.isSafeInteger(receiptTotalCents + lineCents)
+        ) {
+          console.error(
+            'ADD_INCOME_RECEIPT: Calculation exceeds safe integer bounds.'
+          );
+          return state;
+        }
+        receiptTotalCents += lineCents;
+      }
+
+      const receiptItems: IncomeReceiptItem[] = data.items.map((item, index) => {
+        const prod = state.products.find((p) => p.id === item.productId)!;
+        const lineCents = item.quantity * toCents(item.purchasePrice);
+
+        return {
+          id: `item-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+          productId: prod.id,
+          productName: prod.name,
+          sku: prod.sku,
+          quantity: item.quantity,
+          purchasePrice: item.purchasePrice,
+          totalAmount: fromCents(lineCents),
+        };
+      });
+
+      const totalQuantity = receiptItems.reduce((sum, it) => sum + it.quantity, 0);
+      const totalAmount = fromCents(receiptTotalCents);
+
+      const newReceipt: IncomeReceipt = {
+        id: `inc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        receiptNumber,
+        supplier: data.supplier.trim(),
+        documentNumber: data.documentNumber?.trim() || '—',
+        receivedAt: data.receivedAt,
+        createdAt: nowStr,
+        responsiblePerson: data.responsiblePerson?.trim() || 'Администратор',
+        comment: data.comment?.trim() || undefined,
+        items: receiptItems,
+        totalQuantity,
+        totalAmount,
+        status: 'completed',
+      };
+
+      // Atomic product stock and purchase price update
+      const updatedProducts = state.products.map((p) => {
+        const incomingItem = data.items.find((it) => it.productId === p.id);
+        if (!incomingItem) return p;
+
+        const newStock = p.stock + incomingItem.quantity;
+        const newPurchasePrice = incomingItem.purchasePrice;
+        const newStatus = calculateStockStatus(newStock, p.minStockThreshold);
+
+        return {
+          ...p,
+          stock: newStock,
+          purchasePrice: newPurchasePrice,
+          status: newStatus,
+        };
+      });
+
+      // Atomic creation of real warehouse movements for each item
+      const newMovements: WarehouseMovement[] = receiptItems.map((item) => {
+        const prod = state.products.find((p) => p.id === item.productId)!;
+        return {
+          id: `mov-${Date.now()}-${item.productId}-${Math.random().toString(36).substring(2, 6)}`,
+          documentNumber: newReceipt.receiptNumber,
+          type: 'income',
+          typeLabel: 'Приход',
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unit: prod.unit,
+          reason: data.comment?.trim()
+            ? `Приход от поставщика «${newReceipt.supplier}» (${data.comment.trim()})`
+            : `Поступление от поставщика «${newReceipt.supplier}»`,
+          createdAt: nowStr,
+          author: newReceipt.responsiblePerson,
+          receiptId: newReceipt.id,
+          referenceId: newReceipt.id,
+        };
+      });
+
+      return {
+        ...state,
+        products: updatedProducts,
+        movements: [...newMovements, ...state.movements],
+        incomeReceipts: [newReceipt, ...state.incomeReceipts],
+      };
+    }
+
     default:
       return state;
   }
@@ -185,6 +317,13 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       return state.movements.filter((m) => m.productId === productId);
     },
     [state.movements]
+  );
+
+  const getIncomeReceiptById = useCallback(
+    (id: string): IncomeReceipt | undefined => {
+      return state.incomeReceipts.find((r) => r.id === id);
+    },
+    [state.incomeReceipts]
   );
 
   const addProduct = useCallback((data: ProductFormData) => {
@@ -213,24 +352,98 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     [state.products]
   );
 
+  const addIncomeReceipt = useCallback(
+    (data: IncomeReceiptFormData): { success: boolean; error?: string } => {
+      if (!data.supplier?.trim()) {
+        return { success: false, error: 'Укажите поставщика' };
+      }
+      if (!data.receivedAt) {
+        return { success: false, error: 'Укажите дату и время прихода' };
+      }
+      if (!data.items || data.items.length === 0) {
+        return { success: false, error: 'Добавьте хотя бы одну позицию' };
+      }
+
+      const seenIds = new Set<string>();
+      for (const item of data.items) {
+        if (seenIds.has(item.productId)) {
+          return {
+            success: false,
+            error: 'Товары в накладной не должны дублироваться',
+          };
+        }
+        seenIds.add(item.productId);
+
+        const target = state.products.find(
+          (p) => p.id === item.productId && !p.isArchived
+        );
+        if (!target) {
+          return {
+            success: false,
+            error: 'Один из выбранных товаров не найден или архивирован',
+          };
+        }
+
+        if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+          return {
+            success: false,
+            error: `Количество для «${target.name}» должно быть целым числом больше нуля`,
+          };
+        }
+
+        if (!Number.isFinite(item.purchasePrice) || item.purchasePrice < 0) {
+          return {
+            success: false,
+            error: `Цена для «${target.name}» должна быть числом больше или равным нулю`,
+          };
+        }
+      }
+
+      let totalDocCents = 0;
+      for (const item of data.items) {
+        const lineCents = item.quantity * toCents(item.purchasePrice);
+        if (
+          !Number.isSafeInteger(lineCents) ||
+          !Number.isSafeInteger(totalDocCents + lineCents)
+        ) {
+          return {
+            success: false,
+            error: 'Общая сумма накладной превышает допустимый математический предел',
+          };
+        }
+        totalDocCents += lineCents;
+      }
+
+      dispatch({ type: 'ADD_INCOME_RECEIPT', payload: data });
+      return { success: true };
+    },
+    [state.products]
+  );
+
   const value = useMemo<InventoryContextValue>(
     () => ({
       products: state.products,
       activeProducts,
       movements: state.movements,
+      incomeReceipts: state.incomeReceipts,
       getProductMovements,
+      getIncomeReceiptById,
       addProduct,
       updateProduct,
       archiveProduct,
+      addIncomeReceipt,
     }),
     [
       state.products,
       activeProducts,
       state.movements,
+      state.incomeReceipts,
       getProductMovements,
+      getIncomeReceiptById,
       addProduct,
       updateProduct,
       archiveProduct,
+      addIncomeReceipt,
     ]
   );
 

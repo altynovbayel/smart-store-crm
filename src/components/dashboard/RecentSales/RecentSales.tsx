@@ -21,18 +21,18 @@ export const RecentSales = ({ sales }: RecentSalesProps) => {
         <table className={styles.table}>
           <thead>
             <tr>
-              <th scope="col" className={styles.colReceipt}>№ чека</th>
-              <th scope="col" className={styles.colDate}>Дата и время</th>
-              <th scope="col" className={styles.colProduct}>Товар</th>
-              <th scope="col" className={styles.colQty}>Кол-во</th>
-              <th scope="col" className={styles.colAmount}>Сумма</th>
-              <th scope="col" className={styles.colPayment}>Способ оплаты</th>
+              <th scope="col">№ чека</th>
+              <th scope="col">Дата и время</th>
+              <th scope="col">Товар</th>
+              <th scope="col">Кол-во</th>
+              <th scope="col">Сумма</th>
+              <th scope="col">Способ оплаты</th>
               <th scope="col" className={styles.colStatus}>Статус</th>
             </tr>
           </thead>
           <tbody>
             {sales.map((sale) => (
-              <tr key={sale.id} className={styles.row}>
+              <tr key={sale.id}>
                 <td className={styles.receiptCell}>{sale.receiptNumber}</td>
                 <td className={styles.dateCell}>{sale.dateTimeFormatted}</td>
                 <td className={styles.productCell}>{sale.primaryProductName}</td>

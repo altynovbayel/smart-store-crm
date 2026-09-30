@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react';
+import { useRef, type ChangeEvent } from 'react';
 import {
   Search,
   Filter,
@@ -25,6 +25,8 @@ export const WarehouseToolbar = ({
   onExport,
   onAddProduct,
 }: WarehouseToolbarProps) => {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const hasActiveFilters =
     Boolean(filters.searchQuery.trim()) ||
     filters.category !== 'all' ||
@@ -56,6 +58,12 @@ export const WarehouseToolbar = ({
       ...filters,
       searchQuery: '',
     });
+    searchInputRef.current?.focus();
+  };
+
+  const handleResetFilters = () => {
+    onResetFilters();
+    searchInputRef.current?.focus();
   };
 
   return (
@@ -65,6 +73,7 @@ export const WarehouseToolbar = ({
         <div className={styles.searchWrapper}>
           <Search size={16} className={styles.searchIcon} aria-hidden="true" />
           <input
+            ref={searchInputRef}
             type="search"
             className={styles.searchInput}
             placeholder="Поиск по названию, артикулу или штрихкоду"
@@ -124,7 +133,7 @@ export const WarehouseToolbar = ({
           <button
             type="button"
             className={styles.resetButton}
-            onClick={onResetFilters}
+            onClick={handleResetFilters}
             title="Сбросить все фильтры"
           >
             <RotateCcw size={14} />

@@ -8,6 +8,7 @@ export interface PaginationProps {
   totalItems: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  itemLabel?: string;
 }
 
 export const Pagination = ({
@@ -16,6 +17,7 @@ export const Pagination = ({
   totalItems,
   pageSize,
   onPageChange,
+  itemLabel = 'товаров',
 }: PaginationProps) => {
   if (totalItems === 0 || totalPages <= 1) {
     return null;
@@ -61,7 +63,7 @@ export const Pagination = ({
   return (
     <div className={styles.paginationContainer} aria-label="Пагинация таблицы">
       <div className={styles.infoText}>
-        Показано {startItem}–{endItem} из {formatNumber(totalItems)} товаров
+        Показано {startItem}–{endItem} из {formatNumber(totalItems)} {itemLabel}
       </div>
 
       <div className={styles.controls}>

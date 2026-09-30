@@ -18,6 +18,8 @@ export interface WarehouseMovement {
   reason?: string;
   createdAt: string;
   author: string;
+  receiptId?: string;
+  referenceId?: string;
 }
 
 export interface WarehouseSummary {
