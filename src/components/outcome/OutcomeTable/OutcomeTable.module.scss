@@ -1,0 +1,267 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.tableCard {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-card;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tableResponsiveWrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 960px;
+  text-align: left;
+
+  thead tr {
+    border-bottom: 1px solid $color-border;
+    background-color: $color-surface-hover;
+  }
+
+  th {
+    padding: 12px 14px;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-medium;
+    color: $color-text-secondary;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color $transition-fast;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background-color: #f8fafc;
+    }
+  }
+
+  td {
+    padding: 12px 14px;
+    font-size: $font-size-sm;
+    color: $color-text-primary;
+    vertical-align: middle;
+  }
+}
+
+.thRight {
+  text-align: right;
+}
+
+.thCenter {
+  text-align: center;
+}
+
+.tdRight {
+  text-align: right;
+}
+
+.tdCenter {
+  text-align: center;
+}
+
+.outcomeNumber {
+  font-weight: $font-weight-semibold;
+  color: $color-primary;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dateText {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  white-space: nowrap;
+}
+
+// Reason Badges
+.reasonBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+}
+
+.reasonDamaged {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.reasonDefective {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.reasonLost {
+  background-color: #ede9fe;
+  color: #6d28d9;
+}
+
+.reasonInternalUse {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.reasonOther {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.quantityText {
+  font-variant-numeric: tabular-nums;
+  color: $color-text-secondary;
+  white-space: nowrap;
+}
+
+.costText {
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.authorText {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  white-space: nowrap;
+}
+
+.statusBadgeCompleted {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  background-color: $color-success-light;
+  color: $color-success;
+  white-space: nowrap;
+}
+
+.badgeIcon {
+  flex-shrink: 0;
+}
+
+.viewBtn {
+  @include button-reset;
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-md;
+  color: $color-text-secondary;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-light;
+    color: $color-primary-dark;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+// Empty states
+.emptyContainer {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-2xl $spacing-xl;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyIconBox {
+  width: 64px;
+  height: 64px;
+  border-radius: $radius-lg;
+  background-color: $color-surface-hover;
+  color: $color-text-muted;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $spacing-md;
+}
+
+.emptyIcon {
+  color: $color-text-muted;
+}
+
+.emptyTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: 6px;
+}
+
+.emptySubtitle {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  max-width: 460px;
+  margin-bottom: $spacing-lg;
+  line-height: 1.45;
+}
+
+.emptyActionBtn {
+  @include button-reset;
+  padding: 8px 18px;
+  background-color: $color-primary;
+  color: #ffffff;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.emptyResetBtn {
+  @include button-reset;
+  padding: 8px 16px;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  color: $color-text-primary;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    border-color: $color-border-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

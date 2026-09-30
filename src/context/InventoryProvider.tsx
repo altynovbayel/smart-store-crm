@@ -11,7 +11,11 @@ import type {
   IncomeReceipt,
   IncomeReceiptItem,
   IncomeReceiptFormData,
+  OutcomeDocument,
+  OutcomeItem,
+  OutcomeFormData,
 } from '../types';
+import { OUTCOME_REASONS } from '../types';
 import { createInitialInventoryState } from '../data/initialState';
 import {
   calculateStockStatus,
@@ -19,6 +23,7 @@ import {
   getIconTypeByCategory,
 } from '../utils/productUtils';
 import { toCents, fromCents } from '../utils/incomeCalculations';
+import { parseCustomDate } from '../utils/dateUtils';
 import {
   InventoryContext,
   type InventoryState,
@@ -299,6 +304,145 @@ const inventoryReducer = (
       };
     }
 
+    case 'ADD_OUTCOME_DOCUMENT': {
+      const data = action.payload;
+
+      // Validate date
+      if (!data.documentDate) {
+        return state;
+      }
+      const parsedDate = parseCustomDate(data.documentDate);
+      if (!parsedDate || isNaN(parsedDate.getTime()) || parsedDate.getTime() > Date.now()) {
+        return state;
+      }
+
+      // Validate all items atomically
+      if (!data.items || data.items.length === 0) {
+        return state;
+      }
+
+      const seenIds = new Set<string>();
+      for (const item of data.items) {
+        if (seenIds.has(item.productId)) {
+          // Reject duplicate products in single document
+          return state;
+        }
+        seenIds.add(item.productId);
+
+        const prod = state.products.find(
+          (p) => p.id === item.productId && !p.isArchived
+        );
+        if (!prod) {
+          return state;
+        }
+        if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+          return state;
+        }
+        if (item.quantity > prod.stock) {
+          return state;
+        }
+      }
+
+      // Generate sequential outcome number
+      const currentYear = new Date().getFullYear();
+      const nextIndex = state.outcomeDocuments.length + 4;
+      const outcomeNumber = `СП-${currentYear}-${String(nextIndex).padStart(3, '0')}`;
+      const nowStr = formatMovementDate(new Date());
+
+      // Build outcome items with exact integer cents calculation
+      let docTotalCents = 0;
+      for (const item of data.items) {
+        const prod = state.products.find((p) => p.id === item.productId)!;
+        const lineCents = item.quantity * toCents(prod.purchasePrice);
+        if (
+          !Number.isSafeInteger(lineCents) ||
+          !Number.isSafeInteger(docTotalCents + lineCents)
+        ) {
+          console.error(
+            'ADD_OUTCOME_DOCUMENT: Calculation exceeds safe integer bounds.'
+          );
+          return state;
+        }
+        docTotalCents += lineCents;
+      }
+
+      const outcomeItems: OutcomeItem[] = data.items.map((item, index) => {
+        const prod = state.products.find((p) => p.id === item.productId)!;
+        const lineCents = item.quantity * toCents(prod.purchasePrice);
+
+        return {
+          id: `item-out-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
+          productId: prod.id,
+          productName: prod.name,
+          sku: prod.sku,
+          quantity: item.quantity,
+          purchasePrice: prod.purchasePrice,
+          totalCost: fromCents(lineCents),
+        };
+      });
+
+      const totalQuantity = outcomeItems.reduce((sum, it) => sum + it.quantity, 0);
+      const totalCost = fromCents(docTotalCents);
+
+      const newOutcome: OutcomeDocument = {
+        id: `out-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        outcomeNumber,
+        reason: data.reason,
+        documentDate: data.documentDate,
+        createdAt: nowStr,
+        responsiblePerson: data.responsiblePerson?.trim() || 'Администратор',
+        comment: data.comment?.trim() || undefined,
+        items: outcomeItems,
+        totalQuantity,
+        totalCost,
+        status: 'completed',
+      };
+
+      // Atomic product stock update (purchasePrice does not change upon write-off)
+      const updatedProducts = state.products.map((p) => {
+        const outItem = data.items.find((it) => it.productId === p.id);
+        if (!outItem) return p;
+
+        const newStock = Math.max(0, p.stock - outItem.quantity);
+        const newStatus = calculateStockStatus(newStock, p.minStockThreshold);
+
+        return {
+          ...p,
+          stock: newStock,
+          status: newStatus,
+        };
+      });
+
+      // Atomic creation of real warehouse movements for each item
+      const newMovements: WarehouseMovement[] = outcomeItems.map((item) => {
+        const prod = state.products.find((p) => p.id === item.productId)!;
+        const reasonText = OUTCOME_REASONS[newOutcome.reason];
+        return {
+          id: `mov-${Date.now()}-${item.productId}-${Math.random().toString(36).substring(2, 6)}`,
+          documentNumber: newOutcome.outcomeNumber,
+          type: 'write_off',
+          typeLabel: 'Списание',
+          productId: item.productId,
+          productName: item.productName,
+          quantity: -item.quantity,
+          unit: prod.unit,
+          reason: data.comment?.trim()
+            ? `${reasonText} (${data.comment.trim()})`
+            : reasonText,
+          createdAt: nowStr,
+          author: newOutcome.responsiblePerson,
+          referenceId: newOutcome.id,
+        };
+      });
+
+      return {
+        ...state,
+        products: updatedProducts,
+        movements: [...newMovements, ...state.movements],
+        outcomeDocuments: [newOutcome, ...state.outcomeDocuments],
+      };
+    }
+
     default:
       return state;
   }
@@ -324,6 +468,13 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       return state.incomeReceipts.find((r) => r.id === id);
     },
     [state.incomeReceipts]
+  );
+
+  const getOutcomeDocumentById = useCallback(
+    (id: string): OutcomeDocument | undefined => {
+      return state.outcomeDocuments.find((doc) => doc.id === id);
+    },
+    [state.outcomeDocuments]
   );
 
   const addProduct = useCallback((data: ProductFormData) => {
@@ -420,30 +571,119 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     [state.products]
   );
 
+  const addOutcomeDocument = useCallback(
+    (data: OutcomeFormData): { success: boolean; error?: string } => {
+      if (!data.reason) {
+        return { success: false, error: 'Укажите причину списания' };
+      }
+      if (data.reason === 'other' && !data.comment?.trim()) {
+        return {
+          success: false,
+          error: 'Для причины «Другое» комментарий обязателен',
+        };
+      }
+      if (!data.documentDate) {
+        return { success: false, error: 'Укажите дату и время списания' };
+      }
+      const parsedDate = parseCustomDate(data.documentDate);
+      if (!parsedDate || isNaN(parsedDate.getTime())) {
+        return { success: false, error: 'Некорректная дата и время списания' };
+      }
+      if (parsedDate.getTime() > Date.now()) {
+        return { success: false, error: 'Дата списания не может быть в будущем' };
+      }
+      if (!data.items || data.items.length === 0) {
+        return { success: false, error: 'Добавьте хотя бы одну позицию для списания' };
+      }
+
+      const seenIds = new Set<string>();
+      for (const item of data.items) {
+        if (seenIds.has(item.productId)) {
+          return {
+            success: false,
+            error: 'Товары в документе списания не должны дублироваться',
+          };
+        }
+        seenIds.add(item.productId);
+
+        const target = state.products.find(
+          (p) => p.id === item.productId && !p.isArchived
+        );
+        if (!target) {
+          return {
+            success: false,
+            error: 'Один из выбранных товаров не найден или архивирован',
+          };
+        }
+
+        if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+          return {
+            success: false,
+            error: `Количество для «${target.name}» должно быть целым числом больше нуля`,
+          };
+        }
+
+        if (item.quantity > target.stock) {
+          return {
+            success: false,
+            error: `Количество к списанию (${item.quantity}) превышает остаток товара «${target.name}» (${target.stock} ${target.unit})`,
+          };
+        }
+      }
+
+      let totalDocCents = 0;
+      for (const item of data.items) {
+        const prod = state.products.find((p) => p.id === item.productId)!;
+        const lineCents = item.quantity * toCents(prod.purchasePrice);
+        if (
+          !Number.isSafeInteger(lineCents) ||
+          !Number.isSafeInteger(totalDocCents + lineCents)
+        ) {
+          return {
+            success: false,
+            error:
+              'Общая сумма себестоимости списания превышает допустимый математический предел',
+          };
+        }
+        totalDocCents += lineCents;
+      }
+
+      dispatch({ type: 'ADD_OUTCOME_DOCUMENT', payload: data });
+      return { success: true };
+    },
+    [state.products]
+  );
+
   const value = useMemo<InventoryContextValue>(
     () => ({
       products: state.products,
       activeProducts,
       movements: state.movements,
       incomeReceipts: state.incomeReceipts,
+      outcomeDocuments: state.outcomeDocuments,
       getProductMovements,
       getIncomeReceiptById,
+      getOutcomeDocumentById,
       addProduct,
       updateProduct,
       archiveProduct,
       addIncomeReceipt,
+      addOutcomeDocument,
     }),
     [
       state.products,
       activeProducts,
       state.movements,
       state.incomeReceipts,
+      state.outcomeDocuments,
       getProductMovements,
       getIncomeReceiptById,
+      getOutcomeDocumentById,
       addProduct,
       updateProduct,
       archiveProduct,
       addIncomeReceipt,
+      addOutcomeDocument,
     ]
   );
 

@@ -1,0 +1,399 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: $z-index-modal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-md;
+}
+
+.modalCard {
+  background-color: $color-surface;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-drawer;
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalEnter $transition-smooth;
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-lg $spacing-xl;
+  border-bottom: 1px solid $color-border;
+  background-color: $color-surface;
+  flex-shrink: 0;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.iconCircle {
+  width: 42px;
+  height: 42px;
+  border-radius: $radius-md;
+  background-color: #fee2e2;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modalTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: $radius-full;
+  background-color: $color-success-light;
+  color: $color-success;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+}
+
+.modalSubtitle {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  margin-top: 2px;
+}
+
+.closeBtn {
+  @include button-reset;
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-md;
+  color: $color-text-muted;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+.modalBody {
+  padding: $spacing-xl;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+  flex: 1;
+}
+
+.metaCard {
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: $spacing-md;
+
+  @media (max-width: 580px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metaLabel {
+  font-size: 11px;
+  color: $color-text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: $font-weight-medium;
+}
+
+.metaValue {
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  font-weight: $font-weight-semibold;
+}
+
+// Reason badges
+.reasonBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  width: fit-content;
+}
+
+.reasonDamaged {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.reasonDefective {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.reasonLost {
+  background-color: #ede9fe;
+  color: #6d28d9;
+}
+
+.reasonInternalUse {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}
+
+.reasonOther {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.commentBox {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid $color-border;
+  display: flex;
+  gap: 8px;
+}
+
+.commentLabel {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  font-weight: $font-weight-medium;
+  flex-shrink: 0;
+}
+
+.commentText {
+  font-size: $font-size-xs;
+  color: $color-text-primary;
+  line-height: 1.4;
+}
+
+.itemsSection {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.itemsSectionTitle {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.tableResponsiveWrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+}
+
+.itemsTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 580px;
+  text-align: left;
+
+  thead tr {
+    background-color: $color-surface-hover;
+    border-bottom: 1px solid $color-border;
+  }
+
+  th {
+    padding: 10px 12px;
+    font-size: 11px;
+    font-weight: $font-weight-medium;
+    color: $color-text-secondary;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #f1f5f9;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  td {
+    padding: 10px 12px;
+    font-size: $font-size-xs;
+    color: $color-text-primary;
+    vertical-align: middle;
+  }
+}
+
+.thNum {
+  width: 36px;
+  text-align: center;
+}
+
+.tdNum {
+  text-align: center;
+  color: $color-text-muted;
+}
+
+.thRight {
+  text-align: right;
+}
+
+.tdRight {
+  text-align: right;
+}
+
+.productCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.productName {
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+}
+
+.productSku {
+  font-size: 11px;
+  color: $color-text-muted;
+}
+
+.quantityVal {
+  font-variant-numeric: tabular-nums;
+  color: $color-text-secondary;
+}
+
+.priceVal {
+  font-variant-numeric: tabular-nums;
+  color: $color-text-secondary;
+}
+
+.itemTotalVal {
+  font-variant-numeric: tabular-nums;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.summaryBar {
+  background-color: #f8fafc;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.summaryCol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summaryLabel {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}
+
+.summaryVal {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.summaryTotalVal {
+  font-size: $font-size-md;
+  font-weight: $font-weight-bold;
+  color: $color-primary;
+}
+
+.modalFooter {
+  padding: $spacing-md $spacing-xl;
+  border-top: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background-color: $color-surface;
+  flex-shrink: 0;
+}
+
+.closeActionBtn {
+  @include button-reset;
+  height: 38px;
+  padding: 0 20px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    border-color: $color-border-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

@@ -1,5 +1,12 @@
-import type { WarehouseMovement, Product, IncomeReceipt } from '../types';
+import type {
+  WarehouseMovement,
+  Product,
+  IncomeReceipt,
+  OutcomeDocument,
+} from '../types';
+import { OUTCOME_REASONS } from '../types';
 import { initialIncomeReceipts } from './mockIncome';
+import { initialOutcomeDocuments } from './mockOutcome';
 import { initialWarehouseProducts } from './mockProducts';
 import {
   formatDateTime,
@@ -7,7 +14,7 @@ import {
   parseCustomDate,
 } from '../utils/dateUtils';
 
-// Explicit manual non-income movements (sales, write-offs, inventory adjustments)
+// Explicit manual non-income movements (sales, inventory adjustments)
 // Designed so that for every product, the chronological running balance is strictly non-negative at every step.
 const nonIncomeMovements: WarehouseMovement[] = [
   {
@@ -76,22 +83,9 @@ const nonIncomeMovements: WarehouseMovement[] = [
     createdAt: getRelativeDateTimeFormatted(0, 15, 10),
     author: 'Кассир-продавец',
   },
-  {
-    id: 'mov-wo-1',
-    documentNumber: 'СП-2026-004',
-    type: 'write_off',
-    typeLabel: 'Списание',
-    productId: 'prod-5',
-    productName: 'Наушники TWS Pro',
-    quantity: -1,
-    unit: 'шт.',
-    reason: 'Заводской брак (не заряжается левый наушник)',
-    createdAt: getRelativeDateTimeFormatted(9, 18, 0),
-    author: 'Администратор',
-  },
 ];
 
-// Explicit opening balances for products where initial movements complement receipts
+// Explicit opening balances for products where initial movements complement receipts and write-offs
 const openingBalanceMovements: WarehouseMovement[] = [
   {
     id: 'mov-open-prod-2',
@@ -119,16 +113,30 @@ const openingBalanceMovements: WarehouseMovement[] = [
     createdAt: getRelativeDateTimeFormatted(30, 9, 0),
     author: 'Администратор',
   },
+  {
+    id: 'mov-open-prod-8',
+    documentNumber: 'ВВОД-2026-008',
+    type: 'opening_balance',
+    typeLabel: 'Начальный остаток',
+    productId: 'prod-8',
+    productName: 'Автодержатель MagSafe Pro',
+    quantity: 23,
+    unit: 'шт.',
+    reason: 'Ввод начального остатка склада',
+    createdAt: getRelativeDateTimeFormatted(30, 9, 0),
+    author: 'Администратор',
+  },
 ];
 
 /**
  * Pure generator creating initial warehouse movements fully synchronized
- * with initial products and income receipts so that:
+ * with initial products, receipts, and outcome documents so that:
  * currentStock === sum(movements.quantity) for every product.
  */
 export const createInitialMovements = (
   products: Product[],
-  receipts: IncomeReceipt[]
+  receipts: IncomeReceipt[],
+  outcomes: OutcomeDocument[] = initialOutcomeDocuments
 ): WarehouseMovement[] => {
   // 1. Generate real income movements corresponding to each item in initial receipts
   const incomeMovements: WarehouseMovement[] = receipts.flatMap((receipt) =>
@@ -151,16 +159,37 @@ export const createInitialMovements = (
     }))
   );
 
-  // Products with dedicated income and manual transactions
+  // 2. Generate real write-off movements corresponding to each item in outcome documents
+  const outcomeMovements: WarehouseMovement[] = outcomes.flatMap((outcome) =>
+    outcome.items.map((item, idx) => ({
+      id: `mov-out-${outcome.id}-${item.productId}-${idx}`,
+      documentNumber: outcome.outcomeNumber,
+      type: 'write_off' as const,
+      typeLabel: 'Списание',
+      productId: item.productId,
+      productName: item.productName,
+      quantity: -item.quantity,
+      unit: 'шт.',
+      reason: outcome.comment
+        ? `${OUTCOME_REASONS[outcome.reason]} (${outcome.comment})`
+        : OUTCOME_REASONS[outcome.reason],
+      createdAt: formatDateTime(outcome.documentDate),
+      author: outcome.responsiblePerson,
+      referenceId: outcome.id,
+    }))
+  );
+
+  // Products with dedicated income, outcome, and manual transactions
   const specialProductIds = new Set([
     'prod-1',
     'prod-2',
     'prod-3',
     'prod-4',
     'prod-5',
+    'prod-8',
   ]);
 
-  // 2. Generate opening balances for all other catalog products with stock > 0
+  // 3. Generate opening balances for all other catalog products with stock > 0
   const otherOpeningBalances: WarehouseMovement[] = products
     .filter((p) => !specialProductIds.has(p.id) && p.stock > 0)
     .map((p) => ({
@@ -179,6 +208,7 @@ export const createInitialMovements = (
 
   const allMovements = [
     ...incomeMovements,
+    ...outcomeMovements,
     ...nonIncomeMovements,
     ...openingBalanceMovements,
     ...otherOpeningBalances,
@@ -218,7 +248,11 @@ export const validateMovementsChronology = (
 };
 
 export const initialWarehouseMovements: WarehouseMovement[] =
-  createInitialMovements(initialWarehouseProducts, initialIncomeReceipts);
+  createInitialMovements(
+    initialWarehouseProducts,
+    initialIncomeReceipts,
+    initialOutcomeDocuments
+  );
 
 // Verify strictly non-negative running stock in initial movements
 if (!validateMovementsChronology(initialWarehouseMovements)) {
