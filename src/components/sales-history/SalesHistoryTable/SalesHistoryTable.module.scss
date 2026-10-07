@@ -1,0 +1,312 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.tableCard {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-card;
+  overflow: hidden;
+  width: 100%;
+}
+
+.tableResponsiveWrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: $font-size-sm;
+
+  th {
+    padding: $spacing-md;
+    background-color: $color-surface-hover;
+    color: $color-text-secondary;
+    font-weight: $font-weight-semibold;
+    font-size: $font-size-xs;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid $color-border;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: $spacing-md;
+    border-bottom: 1px solid $color-border;
+    color: $color-text-primary;
+    vertical-align: middle;
+  }
+
+  tbody tr {
+    transition: background-color $transition-fast;
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.015);
+    }
+
+    &:last-child td {
+      border-bottom: none;
+    }
+  }
+}
+
+.sortableHeaderBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-primary;
+
+    .sortInactive {
+      color: $color-primary;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 2px;
+    border-radius: $radius-xs;
+  }
+}
+
+.btnRight {
+  margin-left: auto;
+}
+
+.sortInactive {
+  color: $color-text-muted;
+  transition: color $transition-fast;
+}
+
+.sortActive {
+  color: $color-primary;
+}
+
+.thRight,
+.tdRight {
+  text-align: right;
+}
+
+.thCenter,
+.tdCenter {
+  text-align: center;
+}
+
+.receiptNumber {
+  font-weight: $font-weight-semibold;
+  color: $color-primary;
+  font-family: monospace;
+  font-size: $font-size-sm;
+}
+
+.dateText {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  white-space: nowrap;
+}
+
+.productNameCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 240px;
+}
+
+.primaryProduct {
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtotalText {
+  color: $color-text-secondary;
+  white-space: nowrap;
+}
+
+.discountText {
+  color: #dc2626;
+  white-space: nowrap;
+  font-size: $font-size-xs;
+}
+
+.discountZero {
+  color: $color-text-muted;
+}
+
+.totalAmountText {
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  white-space: nowrap;
+}
+
+.quantityText {
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  white-space: nowrap;
+}
+
+.paymentBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+}
+
+.paymentCash {
+  background-color: $color-success-light;
+  color: $color-success;
+  border: 1px solid rgba(22, 163, 74, 0.2);
+}
+
+.paymentCard {
+  background-color: $color-primary-light;
+  color: $color-primary-dark;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.paymentTransfer {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+  border: 1px solid rgba(126, 34, 206, 0.2);
+}
+
+.authorText {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  white-space: nowrap;
+}
+
+.statusBadgeCompleted {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  background-color: $color-success-light;
+  color: $color-success;
+  border: 1px solid rgba(22, 163, 74, 0.2);
+  white-space: nowrap;
+}
+
+.badgeIcon {
+  flex-shrink: 0;
+}
+
+.viewBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-md;
+  border: 1px solid $color-border;
+  background-color: $color-surface;
+  color: $color-text-secondary;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-primary;
+    border-color: $color-primary-light;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 1px;
+  }
+}
+
+// Empty state
+.emptyContainer {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-2xl $spacing-lg;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-shadow: $shadow-card;
+  width: 100%;
+}
+
+.emptyIconBox {
+  width: 64px;
+  height: 64px;
+  border-radius: $radius-full;
+  background-color: $color-surface-hover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $spacing-md;
+}
+
+.emptyIcon {
+  color: $color-text-muted;
+}
+
+.emptyTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: $spacing-xs;
+}
+
+.emptySubtitle {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  max-width: 440px;
+  line-height: 1.5;
+  margin-bottom: $spacing-lg;
+}
+
+.emptyResetBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  height: 38px;
+  padding: 0 $spacing-md;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+  }
+}

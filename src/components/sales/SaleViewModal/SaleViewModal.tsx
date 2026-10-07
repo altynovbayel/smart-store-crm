@@ -11,6 +11,7 @@ export interface SaleViewModalProps {
   isOpen: boolean;
   sale: Sale | null;
   onClose: () => void;
+  fallbackFocusSelector?: string;
 }
 
 const getPaymentBadgeClass = (method: PaymentMethod): string => {
@@ -30,6 +31,7 @@ export const SaleViewModal = ({
   isOpen,
   sale,
   onClose,
+  fallbackFocusSelector = '[data-add-sale-btn]',
 }: SaleViewModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -89,10 +91,10 @@ export const SaleViewModal = ({
       window.removeEventListener('keydown', handleKeyDown);
       restoreFocusWithFallback(
         previousFocusRef.current,
-        '[data-add-sale-btn]'
+        fallbackFocusSelector
       );
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, fallbackFocusSelector]);
 
   if (!isOpen || !sale) return null;
 

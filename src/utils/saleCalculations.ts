@@ -7,6 +7,7 @@ import type {
   SaleItemCalculations,
   SaleTotals,
   SaleValidationResult,
+  BarcodeScanResult,
 } from '../types';
 import { parseCustomDate } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
@@ -481,5 +482,130 @@ export const validateSaleForm = (
       receiptDiscountValue: parsedReceiptDiscount ?? 0,
       items: validatedItems,
     },
+  };
+};
+
+export type { BarcodeScanResult };
+
+/**
+ * Finds and adds or increments a product in sale items by barcode.
+ */
+export const processBarcodeScan = (
+  rawBarcode: string,
+  catalog: readonly Product[],
+  currentItems: readonly SaleFormItemState[]
+): BarcodeScanResult => {
+  const normalizedBarcode = rawBarcode.trim();
+  if (!normalizedBarcode) {
+    return { success: false };
+  }
+
+  const matches = catalog.filter((p) => p.barcode.trim() === normalizedBarcode);
+
+  if (matches.length > 1) {
+    return {
+      success: false,
+      error: 'Обнаружено несколько товаров с одинаковым штрихкодом. Проверьте справочник номенклатуры.',
+    };
+  }
+
+  if (matches.length === 0) {
+    return {
+      success: false,
+      error: 'Товар с таким штрихкодом не найден',
+    };
+  }
+
+  const product = matches[0];
+
+  if (product.isArchived) {
+    return {
+      success: false,
+      error: 'Товар находится в архиве',
+    };
+  }
+
+  if (product.stock <= 0) {
+    return {
+      success: false,
+      error: 'Товара нет в наличии',
+    };
+  }
+
+  const existingIndex = currentItems.findIndex(
+    (it) => it.productId === product.id
+  );
+
+  if (existingIndex !== -1) {
+    const existing = currentItems[existingIndex];
+    const parsedQty = parseSaleQuantity(existing.rawQuantity) ?? 0;
+    const nextQty = parsedQty + 1;
+
+    if (nextQty > product.stock) {
+      return {
+        success: false,
+        error: `Нельзя добавить больше: доступно ${product.stock} шт.`,
+      };
+    }
+
+    const updatedItems = currentItems.map((it, idx) =>
+      idx === existingIndex ? { ...it, rawQuantity: String(nextQty) } : it
+    );
+
+    return {
+      success: true,
+      product,
+      updatedItems,
+      message: `${product.name} добавлен в чек (всего ${nextQty} шт.)`,
+    };
+  }
+
+  // Not in items yet
+  if (product.stock < 1) {
+    return {
+      success: false,
+      error: 'Товара нет в наличии',
+    };
+  }
+
+  // If there's an empty row without product selected, populate it
+  const emptyRowIndex = currentItems.findIndex((it) => !it.productId);
+
+  if (emptyRowIndex !== -1) {
+    const targetRow = currentItems[emptyRowIndex];
+    const newItem: SaleFormItemState = {
+      ...targetRow,
+      productId: product.id,
+      rawQuantity: '1',
+      rawUnitPrice: String(product.sellingPrice),
+      discountType: 'fixed',
+      rawDiscountValue: '',
+    };
+    const updatedItems = currentItems.map((it, idx) =>
+      idx === emptyRowIndex ? newItem : it
+    );
+    return {
+      success: true,
+      product,
+      updatedItems,
+      message: `${product.name} добавлен в чек`,
+    };
+  }
+
+  // Otherwise append a new row
+  const newItem: SaleFormItemState = {
+    id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+    productId: product.id,
+    rawQuantity: '1',
+    rawUnitPrice: String(product.sellingPrice),
+    discountType: 'fixed',
+    rawDiscountValue: '',
+  };
+
+  return {
+    success: true,
+    product,
+    updatedItems: [...currentItems, newItem],
+    message: `${product.name} добавлен в чек`,
   };
 };

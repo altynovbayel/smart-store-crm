@@ -14,13 +14,16 @@ import { restoreFocusWithFallback } from '../../../utils/focusUtils';
 import {
   calculateSaleTotals,
   validateSaleForm,
+  processBarcodeScan,
 } from '../../../utils/saleCalculations';
 import { SaleFormItemRow } from './SaleFormItemRow';
+import { BarcodeScannerField } from './BarcodeScannerField';
 import styles from './SaleFormModal.module.scss';
 
 export interface SaleFormModalProps {
   isOpen: boolean;
   activeProducts: Product[];
+  allProducts?: Product[];
   onClose: () => void;
   onSubmit: (data: SaleFormData) => { success: boolean; error?: string };
 }
@@ -28,11 +31,17 @@ export interface SaleFormModalProps {
 export const SaleFormModal = ({
   isOpen,
   activeProducts,
+  allProducts,
   onClose,
   onSubmit,
 }: SaleFormModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const barcodeInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [barcode, setBarcode] = useState('');
+  const [barcodeError, setBarcodeError] = useState<string | null>(null);
+  const [barcodeSuccess, setBarcodeSuccess] = useState<string | null>(null);
 
   const [soldAt, setSoldAt] = useState(() => getCurrentLocalDatetime());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -42,20 +51,17 @@ export const SaleFormModal = ({
   const [receiptDiscountType, setReceiptDiscountType] = useState<DiscountType>('fixed');
   const [rawReceiptDiscountValue, setRawReceiptDiscountValue] = useState('');
 
-  // Initial single item with first product having stock > 0
-  const [items, setItems] = useState<SaleFormItemState[]>(() => {
-    const firstAvailable = activeProducts.find((p) => p.stock > 0) ?? activeProducts[0];
-    return [
-      {
-        id: 'row-1',
-        productId: firstAvailable ? firstAvailable.id : '',
-        rawQuantity: '1',
-        rawUnitPrice: firstAvailable ? String(firstAvailable.sellingPrice) : '0',
-        discountType: 'fixed',
-        rawDiscountValue: '',
-      },
-    ];
-  });
+  // Initial single empty item
+  const [items, setItems] = useState<SaleFormItemState[]>([
+    {
+      id: 'row-1',
+      productId: '',
+      rawQuantity: '1',
+      rawUnitPrice: '0',
+      discountType: 'fixed',
+      rawDiscountValue: '',
+    },
+  ]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,11 +77,20 @@ export const SaleFormModal = ({
 
     document.body.classList.add('drawer-open');
 
-    // Focus first input if focus is not already inside the modal
+    // Focus barcode scanner input initially if focus is not already inside the modal
     const isFocusInside = modalRef.current?.contains(document.activeElement);
     if (!isFocusInside) {
-      const soldAtInput = modalRef.current?.querySelector<HTMLInputElement>('#sale-sold-at');
-      soldAtInput?.focus();
+      const barcodeInput = modalRef.current?.querySelector<HTMLInputElement>(
+        '#sale-barcode-scanner'
+      );
+      if (barcodeInput) {
+        barcodeInput.focus();
+      } else {
+        const soldAtInput = modalRef.current?.querySelector<HTMLInputElement>(
+          '#sale-sold-at'
+        );
+        soldAtInput?.focus();
+      }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -135,19 +150,82 @@ export const SaleFormModal = ({
     rawReceivedAmount
   );
 
+  // Barcode scanner handling
+  const handleBarcodeChange = (val: string) => {
+    setBarcode(val);
+    if (barcodeError) {
+      setBarcodeError(null);
+    }
+  };
+
+  const handleBarcodeScan = (scannedValue: string) => {
+    const trimmed = scannedValue.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const catalog = allProducts ?? activeProducts;
+    const res = processBarcodeScan(trimmed, catalog, items);
+
+    if (res.success && res.updatedItems) {
+      const newItems = res.updatedItems;
+      setItems(newItems);
+      setBarcode('');
+      setBarcodeError(null);
+      setBarcodeSuccess(res.message ?? 'Товар добавлен в чек');
+
+      // Re-validate and update form errors if errors were previously active
+      setErrors((prevErrors) => {
+        if (Object.keys(prevErrors).length === 0) return prevErrors;
+        const valResult = validateSaleForm(
+          soldAt,
+          paymentMethod,
+          rawReceivedAmount,
+          responsiblePerson,
+          comment,
+          receiptDiscountType,
+          rawReceiptDiscountValue,
+          newItems,
+          activeProducts
+        );
+        return valResult.errors;
+      });
+
+      // Retain focus in barcode scanner input
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        barcodeInputRef.current?.focus();
+      });
+    } else if (!res.success && res.error) {
+      setBarcodeError(res.error);
+      setBarcodeSuccess(null);
+
+      // Retain focus and select input text for quick rescan
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        if (barcodeInputRef.current && document.contains(barcodeInputRef.current)) {
+          barcodeInputRef.current.focus();
+          barcodeInputRef.current.select();
+        }
+      });
+    }
+  };
+
   // Add line item
   const handleAddItem = () => {
-    const available = activeProducts.find(
-      (p) => p.stock > 0 && !items.some((it) => it.productId === p.id)
-    ) ?? activeProducts.find((p) => !items.some((it) => it.productId === p.id));
-
     setItems((prev) => [
       ...prev,
       {
         id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        productId: available ? available.id : '',
+        productId: '',
         rawQuantity: '1',
-        rawUnitPrice: available ? String(available.sellingPrice) : '0',
+        rawUnitPrice: '0',
         discountType: 'fixed',
         rawDiscountValue: '',
       },
@@ -419,6 +497,16 @@ export const SaleFormModal = ({
                 </div>
               </div>
             )}
+
+            {/* Barcode Scanner Section */}
+            <BarcodeScannerField
+              value={barcode}
+              onChange={handleBarcodeChange}
+              onScan={handleBarcodeScan}
+              error={barcodeError}
+              successMessage={barcodeSuccess}
+              inputRef={barcodeInputRef}
+            />
 
             {/* Items Table Section */}
             <div>

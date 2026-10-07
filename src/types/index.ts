@@ -4,3 +4,4 @@ export type * from './warehouse';
 export type * from './report';
 export type * from './income';
 export * from './outcome';
+export * from './salesHistory';

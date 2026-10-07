@@ -21,7 +21,7 @@ import { Pagination } from '../../components/warehouse/Pagination/Pagination';
 import styles from './SalesPage.module.scss';
 
 export const SalesPage = () => {
-  const { sales, activeProducts, addSale } = useInventory();
+  const { sales, activeProducts, products, addSale } = useInventory();
 
   // Filters state
   const [filters, setFilters] = useState<SaleFilters>({
@@ -322,6 +322,7 @@ export const SalesPage = () => {
         <SaleFormModal
           isOpen={isCreateModalOpen}
           activeProducts={activeProducts}
+          allProducts={products}
           onClose={handleCloseCreateModal}
           onSubmit={handleCreateSale}
         />

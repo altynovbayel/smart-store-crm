@@ -1,3 +1,5 @@
+import type { Product } from './product';
+
 export type PaymentMethod = 'cash' | 'card' | 'transfer';
 export type PaymentMethodLabel = 'Наличные' | 'Карта' | 'Перевод';
 
@@ -137,4 +139,12 @@ export interface SaleValidationResult {
   isValid: boolean;
   errors: Record<string, string>;
   data?: SaleFormData;
+}
+
+export interface BarcodeScanResult {
+  success: boolean;
+  product?: Product;
+  updatedItems?: SaleFormItemState[];
+  message?: string;
+  error?: string;
 }

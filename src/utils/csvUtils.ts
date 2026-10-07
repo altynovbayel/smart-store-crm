@@ -1,4 +1,4 @@
-import type { Product } from '../types';
+import type { Product, CSVCellValue } from '../types';
 import { getStockStatusLabel } from './productUtils';
 
 /**
@@ -35,6 +35,45 @@ export const formatCSVCell = (value: string | number | undefined | null): string
 };
 
 export const escapeCSVValue = formatCSVCell;
+export type { CSVCellValue };
+
+/**
+ * Builds CSV content: UTF-8 BOM, `;` delimiter, CRLF line endings.
+ * Headers and text cells are protected from CSV/Formula Injection,
+ * numeric cells stay numeric.
+ */
+export const buildCSVContent = (
+  headers: readonly string[],
+  rows: ReadonlyArray<readonly CSVCellValue[]>
+): string => {
+  return (
+    '\uFEFF' +
+    [
+      headers.map(sanitizeCSVText).join(';'),
+      ...rows.map((row) => row.map(formatCSVCell).join(';')),
+    ].join('\r\n')
+  );
+};
+
+/**
+ * Triggers browser download of CSV content.
+ */
+export const downloadCSVFile = (csvContent: string, fileName: string): void => {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', fileName);
+  link.style.display = 'none';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Defer revocation so that the browser has time to start the download
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+};
 
 /**
  * Exports products to a CSV file with UTF-8 BOM for proper Cyrillic rendering in Excel.
@@ -70,24 +109,5 @@ export const exportProductsToCSV = (
     getStockStatusLabel(p.status),
   ]);
 
-  const csvContent =
-    '\uFEFF' +
-    [
-      headers.map(sanitizeCSVText).join(';'),
-      ...rows.map((row) => row.map(formatCSVCell).join(';')),
-    ].join('\r\n');
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-
-  link.setAttribute('href', url);
-  link.setAttribute('download', fileName);
-  link.style.display = 'none';
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
+  downloadCSVFile(buildCSVContent(headers, rows), fileName);
 };
