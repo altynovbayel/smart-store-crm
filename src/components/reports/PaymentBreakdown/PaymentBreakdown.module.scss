@@ -1,0 +1,127 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.container {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.title {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.itemCard {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  padding: $spacing-sm;
+  background-color: $color-background;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+}
+
+.itemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.itemTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.iconWrapper {
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.iconCash {
+  background-color: $color-success-light;
+  color: $color-success;
+}
+
+.iconCard {
+  background-color: $color-primary-light;
+  color: $color-primary-dark;
+}
+
+.iconTransfer {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+}
+
+.methodName {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.receiptsCount {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}
+
+.amountGroup {
+  text-align: right;
+}
+
+.amount {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+}
+
+.percentage {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+}
+
+.progressBarTrack {
+  width: 100%;
+  height: 6px;
+  background-color: $color-border;
+  border-radius: $radius-full;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  height: 100%;
+  border-radius: $radius-full;
+  transition: width $transition-base;
+}
+
+.barCash {
+  background-color: $color-success;
+}
+
+.barCard {
+  background-color: $color-primary;
+}
+
+.barTransfer {
+  background-color: #9333ea;
+}

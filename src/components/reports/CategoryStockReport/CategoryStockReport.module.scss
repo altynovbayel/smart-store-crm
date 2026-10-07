@@ -1,0 +1,129 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.container {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.titleIcon {
+  color: $color-primary;
+}
+
+.title {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin: 0;
+}
+
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $font-size-sm;
+
+  th {
+    padding: $spacing-xs $spacing-sm;
+    text-align: left;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-semibold;
+    color: $color-text-secondary;
+    border-bottom: 1px solid $color-border;
+    background-color: $color-surface-hover;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: $spacing-sm;
+    border-bottom: 1px solid $color-border;
+    vertical-align: middle;
+  }
+}
+
+.thCategory {
+  min-width: 160px;
+}
+
+.categoryName {
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+}
+
+.thCount {
+  text-align: right !important;
+  min-width: 90px;
+}
+
+.tdCount {
+  text-align: right;
+}
+
+.countValue {
+  color: $color-text-secondary;
+}
+
+.thUnits {
+  text-align: right !important;
+  min-width: 100px;
+}
+
+.tdUnits {
+  text-align: right;
+}
+
+.unitsValue {
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.thPurchase {
+  text-align: right !important;
+  min-width: 140px;
+}
+
+.tdPurchase {
+  text-align: right;
+}
+
+.purchaseValue {
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+}
+
+.thPotential {
+  text-align: right !important;
+  min-width: 140px;
+}
+
+.tdPotential {
+  text-align: right;
+}
+
+.potentialValue {
+  font-weight: $font-weight-bold;
+  color: $color-primary-dark;
+}

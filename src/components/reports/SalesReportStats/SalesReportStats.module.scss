@@ -1,0 +1,99 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-md;
+  width: 100%;
+
+  @media (max-width: 1024px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 600px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.statCard {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  box-shadow: $shadow-card;
+  transition: transform $transition-fast, box-shadow $transition-fast;
+
+  &:hover {
+    box-shadow: $shadow-md;
+  }
+}
+
+.iconBox {
+  width: 48px;
+  height: 48px;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.iconGreen {
+  background-color: $color-success-light;
+  color: $color-success;
+}
+
+.iconBlue {
+  background-color: $color-primary-light;
+  color: $color-primary-dark;
+}
+
+.iconPurple {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+}
+
+.iconIndigo {
+  background-color: #e0e7ff;
+  color: #4338ca;
+}
+
+.iconOrange {
+  background-color: $color-warning-light;
+  color: $color-warning-dark;
+}
+
+.iconPink {
+  background-color: #fce7f3;
+  color: #be185d;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.title {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

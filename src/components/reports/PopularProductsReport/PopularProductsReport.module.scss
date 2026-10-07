@@ -1,0 +1,211 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.container {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.titleIcon {
+  color: $color-primary;
+}
+
+.title {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl $spacing-md;
+  color: $color-text-muted;
+  gap: $spacing-xs;
+}
+
+.emptyIcon {
+  opacity: 0.6;
+}
+
+.emptyText {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  margin: 0;
+}
+
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $font-size-sm;
+
+  th {
+    padding: $spacing-xs $spacing-sm;
+    text-align: left;
+    font-size: $font-size-xs;
+    font-weight: $font-weight-semibold;
+    color: $color-text-secondary;
+    border-bottom: 1px solid $color-border;
+    background-color: $color-surface-hover;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: $spacing-sm;
+    border-bottom: 1px solid $color-border;
+    vertical-align: middle;
+  }
+}
+
+.thRank {
+  width: 40px;
+  text-align: center !important;
+}
+
+.tdRank {
+  text-align: center;
+}
+
+.rankBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: $radius-full;
+  background-color: $color-background;
+  border: 1px solid $color-border;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-bold;
+  color: $color-text-secondary;
+}
+
+.rankFirst {
+  background-color: #fef9c3;
+  border-color: #fde047;
+  color: #a16207;
+}
+
+.rankSecond {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.rankThird {
+  background-color: #ffedd5;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+.thProduct {
+  min-width: 180px;
+}
+
+.productName {
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.productSku {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.thQuantity {
+  text-align: right !important;
+  min-width: 90px;
+}
+
+.tdQuantity {
+  text-align: right;
+}
+
+.quantityValue {
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.thRevenue {
+  text-align: right !important;
+  min-width: 110px;
+}
+
+.tdRevenue {
+  text-align: right;
+}
+
+.revenueValue {
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+}
+
+.thShare {
+  min-width: 110px;
+}
+
+.shareGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.shareValue {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  width: 42px;
+  text-align: right;
+}
+
+.shareTrack {
+  flex: 1;
+  height: 6px;
+  background-color: $color-border;
+  border-radius: $radius-full;
+  overflow: hidden;
+}
+
+.shareFill {
+  height: 100%;
+  background-color: $color-primary;
+  border-radius: $radius-full;
+  transition: width $transition-fast;
+}

@@ -1,0 +1,50 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.tabsWrapper {
+  display: inline-flex;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: 4px;
+  gap: 4px;
+  box-shadow: $shadow-card;
+  width: fit-content;
+}
+
+.tabBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  padding: 8px 16px;
+  border: none;
+  border-radius: $radius-md;
+  background: transparent;
+  color: $color-text-secondary;
+  font-family: $font-family-base;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    color: $color-text-primary;
+    background-color: $color-surface-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 2px;
+  }
+}
+
+.tabBtnActive {
+  background-color: $color-primary-light;
+  color: $color-primary-dark;
+  font-weight: $font-weight-semibold;
+
+  &:hover {
+    background-color: $color-primary-light;
+    color: $color-primary-dark;
+  }
+}

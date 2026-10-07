@@ -1,0 +1,141 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.chartContainer {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-card;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  width: 100%;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.chartTitle {
+  font-size: $font-size-md;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin: 0;
+}
+
+.chartSubtitle {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  margin: 2px 0 0 0;
+}
+
+.activeStatsBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  background-color: $color-primary-light;
+  padding: 4px $spacing-sm;
+  border-radius: $radius-md;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-primary-dark;
+  flex-wrap: wrap;
+}
+
+.badgeDate {
+  color: $color-text-secondary;
+}
+
+.badgeRevenue {
+  font-weight: $font-weight-bold;
+  color: $color-primary-dark;
+}
+
+.badgeReceipts {
+  color: $color-text-secondary;
+  font-size: 11px;
+}
+
+.svgWrapper {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.chartSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+}
+
+.gridLine {
+  stroke: $color-border;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.axisLabel {
+  font-size: 11px;
+  fill: $color-text-muted;
+  font-family: $font-family-base;
+}
+
+.areaFill {
+  opacity: 0.8;
+  transition: opacity $transition-fast;
+}
+
+.chartLine {
+  transition: stroke-width $transition-fast;
+}
+
+.pointGroup {
+  cursor: pointer;
+  outline: none;
+
+  &:focus-visible .dataCircle {
+    stroke: $color-primary-dark;
+    stroke-width: 3;
+    r: 6;
+  }
+}
+
+.dataCircle {
+  fill: $color-surface;
+  stroke: $color-primary;
+  stroke-width: 2.5;
+  transition: r $transition-fast, stroke-width $transition-fast, fill $transition-fast;
+}
+
+.dataCircleActive {
+  fill: $color-primary;
+  stroke: $color-surface;
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 4px rgba(14, 165, 233, 0.4));
+}
+
+.tooltipBg {
+  fill: $color-text-primary;
+  filter: drop-shadow(0 4px 6px rgba(15, 23, 42, 0.2));
+}
+
+.tooltipText {
+  fill: $color-surface;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: $font-family-base;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .areaFill,
+  .chartLine,
+  .dataCircle {
+    transition: none;
+  }
+}

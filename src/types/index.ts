@@ -5,3 +5,4 @@ export type * from './report';
 export type * from './income';
 export * from './outcome';
 export * from './salesHistory';
+export * from './reports';
