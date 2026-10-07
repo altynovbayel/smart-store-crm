@@ -4,7 +4,8 @@ export type WarehouseMovementType =
   | 'adjustment'
   | 'write_off'
   | 'opening_balance'
-  | 'inventory_adjustment';
+  | 'inventory_adjustment'
+  | 'sale';
 
 export interface WarehouseMovement {
   id: string;

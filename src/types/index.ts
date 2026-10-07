@@ -1,5 +1,5 @@
 export type * from './product';
-export type * from './sale';
+export * from './sale';
 export type * from './warehouse';
 export type * from './report';
 export type * from './income';

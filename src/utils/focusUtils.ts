@@ -22,7 +22,7 @@ export const isElementVisible = (element: HTMLElement): boolean => {
  * Avoids buttons hidden by responsive CSS (e.g. mobile breakpoints).
  */
 export const getVisibleAddButton = (
-  selector: string = '[data-add-product-btn], [data-add-income-btn], [data-add-outcome-btn]'
+  selector: string = '[data-add-product-btn], [data-add-income-btn], [data-add-outcome-btn], [data-add-sale-btn]'
 ): HTMLElement | null => {
   const candidates = Array.from(
     document.querySelectorAll<HTMLElement>(selector)
@@ -46,13 +46,17 @@ export const getVisibleAddOutcomeButton = (): HTMLElement | null => {
   return getVisibleAddButton('[data-add-outcome-btn]');
 };
 
+export const getVisibleAddSaleButton = (): HTMLElement | null => {
+  return getVisibleAddButton('[data-add-sale-btn]');
+};
+
 /**
  * Restores focus to the previously active element if it's still attached to the DOM
  * and visible, otherwise falls back to the visible action button.
  */
 export const restoreFocusWithFallback = (
   previousElement: HTMLElement | null,
-  fallbackSelector: string = '[data-add-product-btn], [data-add-income-btn], [data-add-outcome-btn]'
+  fallbackSelector: string = '[data-add-product-btn], [data-add-income-btn], [data-add-outcome-btn], [data-add-sale-btn]'
 ): void => {
   if (
     previousElement &&

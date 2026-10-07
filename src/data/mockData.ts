@@ -5,6 +5,7 @@ import type {
   Sale,
   LowStockItem,
 } from '../types';
+import { initialSales } from './mockSales';
 
 export const mockDashboardMetrics: DashboardMetric[] = [
   {
@@ -164,73 +165,7 @@ export const mockPopularProducts: PopularProductItem[] = [
   },
 ];
 
-export const mockRecentSales: Sale[] = [
-  {
-    id: 'sale-1',
-    receiptNumber: '#0001256',
-    createdAt: '2026-09-23T16:42:00',
-    dateTimeFormatted: '23.09.2026 16:42',
-    primaryProductName: 'Чехол iPhone 15',
-    itemsCount: 1,
-    totalAmount: 1990,
-    paymentMethod: 'cash',
-    paymentMethodLabel: 'Наличные',
-    status: 'completed',
-    statusLabel: 'Завершено',
-  },
-  {
-    id: 'sale-2',
-    receiptNumber: '#0001255',
-    createdAt: '2026-09-23T15:18:00',
-    dateTimeFormatted: '23.09.2026 15:18',
-    primaryProductName: 'Кабель Type-C',
-    itemsCount: 2,
-    totalAmount: 1800,
-    paymentMethod: 'card',
-    paymentMethodLabel: 'Карта',
-    status: 'completed',
-    statusLabel: 'Завершено',
-  },
-  {
-    id: 'sale-3',
-    receiptNumber: '#0001254',
-    createdAt: '2026-09-23T14:03:00',
-    dateTimeFormatted: '23.09.2026 14:03',
-    primaryProductName: 'Защитное стекло',
-    itemsCount: 1,
-    totalAmount: 700,
-    paymentMethod: 'cash',
-    paymentMethodLabel: 'Наличные',
-    status: 'completed',
-    statusLabel: 'Завершено',
-  },
-  {
-    id: 'sale-4',
-    receiptNumber: '#0001253',
-    createdAt: '2026-09-23T12:27:00',
-    dateTimeFormatted: '23.09.2026 12:27',
-    primaryProductName: 'Наушники TWS',
-    itemsCount: 1,
-    totalAmount: 2990,
-    paymentMethod: 'card',
-    paymentMethodLabel: 'Карта',
-    status: 'completed',
-    statusLabel: 'Завершено',
-  },
-  {
-    id: 'sale-5',
-    receiptNumber: '#0001252',
-    createdAt: '2026-09-23T11:11:00',
-    dateTimeFormatted: '23.09.2026 11:11',
-    primaryProductName: 'Power Bank 20 000 mAh',
-    itemsCount: 1,
-    totalAmount: 4990,
-    paymentMethod: 'cash',
-    paymentMethodLabel: 'Наличные',
-    status: 'completed',
-    statusLabel: 'Завершено',
-  },
-];
+export const mockRecentSales: Sale[] = initialSales;
 
 export const mockLowStockItems: LowStockItem[] = [
   {

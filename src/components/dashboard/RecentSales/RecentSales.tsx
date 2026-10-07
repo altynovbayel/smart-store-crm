@@ -12,7 +12,7 @@ export const RecentSales = ({ sales }: RecentSalesProps) => {
     <div className={styles.container}>
       <header className={styles.header}>
         <h2 className={styles.title}>Последние продажи</h2>
-        <Link to="/sales-history" className={styles.actionLink}>
+        <Link to="/sales" className={styles.actionLink}>
           Все продажи
         </Link>
       </header>

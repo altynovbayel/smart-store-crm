@@ -1,24 +1,25 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { RevenueDataPoint } from '../../../types';
-import { mock14DaysRevenue, mock30DaysRevenue } from '../../../data/mockData';
 import styles from './RevenueChart.module.scss';
 
 export interface RevenueChartProps {
   data: RevenueDataPoint[];
+  data14?: RevenueDataPoint[];
+  data30?: RevenueDataPoint[];
 }
 
-export const RevenueChart = ({ data }: RevenueChartProps) => {
+export const RevenueChart = ({ data, data14, data30 }: RevenueChartProps) => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [currentFilter, setCurrentFilter] = useState('За 7 дней');
   const filterBtnRef = useRef<HTMLButtonElement | null>(null);
   const dropdownRef = useRef<HTMLUListElement | null>(null);
 
   const activeData = useMemo(() => {
-    if (currentFilter === 'За 14 дней') return mock14DaysRevenue;
-    if (currentFilter === 'За 30 дней') return mock30DaysRevenue;
+    if (currentFilter === 'За 14 дней') return data14 ?? data;
+    if (currentFilter === 'За 30 дней') return data30 ?? data;
     return data;
-  }, [currentFilter, data]);
+  }, [currentFilter, data, data14, data30]);
 
   // Active point index (defaults to the last day of the current dataset)
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -27,7 +28,11 @@ export const RevenueChart = ({ data }: RevenueChartProps) => {
       ? hoveredIndex
       : activeData.length - 1;
 
-  const maxY = 40000;
+  const maxY = useMemo(() => {
+    const maxVal = Math.max(...activeData.map((d) => d.revenue), 10000);
+    return Math.ceil(maxVal / 10000) * 10000;
+  }, [activeData]);
+
   const viewBoxWidth = 600;
   const viewBoxHeight = 220;
   const marginTop = 24;
@@ -38,7 +43,10 @@ export const RevenueChart = ({ data }: RevenueChartProps) => {
   const chartWidth = viewBoxWidth - marginLeft - marginRight;
   const chartHeight = viewBoxHeight - marginTop - marginBottom;
 
-  const yTicks = [40000, 30000, 20000, 10000, 0];
+  const yTicks = useMemo(() => {
+    const step = maxY / 4;
+    return [maxY, maxY - step, maxY - step * 2, maxY - step * 3, 0];
+  }, [maxY]);
 
   const points = useMemo(() => {
     const step = chartWidth / (activeData.length - 1);

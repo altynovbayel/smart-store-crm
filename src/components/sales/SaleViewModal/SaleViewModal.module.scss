@@ -1,0 +1,319 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: $spacing-md;
+  overflow-y: auto;
+}
+
+.modalDialog {
+  background-color: $color-surface;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-drawer;
+  border: 1px solid $color-border;
+  width: 100%;
+  max-width: 820px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalEnter 0.15s ease-out;
+
+  @media (max-width: 768px) {
+    max-height: 95vh;
+  }
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.modalHeader {
+  padding: $spacing-lg $spacing-xl;
+  border-bottom: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+}
+
+.headerTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.headerIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: $radius-md;
+  background-color: $color-primary-light;
+  color: $color-primary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin: 0;
+}
+
+.modalSubtitle {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  margin: 2px 0 0;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: $color-text-muted;
+  cursor: pointer;
+  padding: $spacing-xs;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+
+  &:hover {
+    color: $color-text-primary;
+    background-color: $color-surface-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 1px;
+  }
+}
+
+.modalBody {
+  padding: $spacing-xl;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xl;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: $spacing-md;
+  background-color: $color-surface-hover;
+  padding: $spacing-md $spacing-lg;
+  border-radius: $radius-lg;
+  border: 1px solid $color-border;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.infoLabel {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}
+
+.infoValue {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+}
+
+.paymentBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  width: fit-content;
+}
+
+.paymentCash {
+  background-color: $color-success-light;
+  color: $color-success;
+  border: 1px solid rgba(22, 163, 74, 0.2);
+}
+
+.paymentCard {
+  background-color: $color-primary-light;
+  color: $color-primary-dark;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.paymentTransfer {
+  background-color: #f3e8ff;
+  color: #7e22ce;
+  border: 1px solid rgba(126, 34, 206, 0.2);
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: $radius-full;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  background-color: $color-success-light;
+  color: $color-success;
+  border: 1px solid rgba(22, 163, 74, 0.2);
+  width: fit-content;
+}
+
+.commentBox {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  padding: $spacing-sm $spacing-md;
+}
+
+.sectionTitle {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin-bottom: $spacing-sm;
+}
+
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $font-size-xs;
+  text-align: left;
+
+  th {
+    padding: $spacing-sm $spacing-md;
+    background-color: $color-surface-hover;
+    color: $color-text-secondary;
+    font-weight: $font-weight-semibold;
+    border-bottom: 1px solid $color-border;
+  }
+
+  td {
+    padding: $spacing-sm $spacing-md;
+    border-bottom: 1px solid $color-border;
+    color: $color-text-primary;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+}
+
+.thRight,
+.tdRight {
+  text-align: right;
+}
+
+.summaryBox {
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}
+
+.summaryTotalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  padding-top: $spacing-sm;
+  border-top: 1px solid $color-border;
+}
+
+.summaryProfitRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-success;
+  padding-top: 4px;
+}
+
+.totalHighlight {
+  font-size: $font-size-lg;
+  color: $color-primary;
+}
+
+.modalFooter {
+  padding: $spacing-md $spacing-xl;
+  border-top: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background-color: $color-surface-hover;
+}
+
+.closeFooterBtn {
+  height: 38px;
+  padding: 0 $spacing-xl;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+  }
+}

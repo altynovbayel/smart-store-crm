@@ -1,5 +1,5 @@
 import type { IncomeReceipt } from '../types';
-import { getRelativeDateISO } from '../utils/dateUtils';
+import { getRelativeDateISO, getGuaranteedPastDateISO } from '../utils/dateUtils';
 
 export const initialIncomeReceipts: IncomeReceipt[] = [
   {
@@ -7,8 +7,8 @@ export const initialIncomeReceipts: IncomeReceipt[] = [
     receiptNumber: 'ПР-2026-092',
     supplier: 'Anker Official KG',
     documentNumber: 'ТОРГ-8841',
-    receivedAt: getRelativeDateISO(0, 10, 30),
-    createdAt: getRelativeDateISO(0, 10, 30),
+    receivedAt: getGuaranteedPastDateISO(30),
+    createdAt: getGuaranteedPastDateISO(30),
     responsiblePerson: 'Администратор',
     comment: 'Срочная поставка адаптеров и кабелей',
     items: [

@@ -1,5 +1,5 @@
 import type { OutcomeDocument } from '../types';
-import { getRelativeDateISO } from '../utils/dateUtils';
+import { getRelativeDateISO, getGuaranteedPastDateISO } from '../utils/dateUtils';
 
 export const initialOutcomeDocuments: OutcomeDocument[] = [
   {
@@ -29,8 +29,8 @@ export const initialOutcomeDocuments: OutcomeDocument[] = [
     id: 'out-2',
     outcomeNumber: 'СП-2026-005',
     reason: 'damaged',
-    documentDate: getRelativeDateISO(0, 12, 0),
-    createdAt: getRelativeDateISO(0, 12, 0),
+    documentDate: getGuaranteedPastDateISO(20),
+    createdAt: getGuaranteedPastDateISO(20),
     responsiblePerson: 'Администратор',
     comment: 'Повреждение упаковки и корпуса при падении с полки',
     items: [

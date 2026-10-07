@@ -3,10 +3,12 @@ import type {
   Product,
   IncomeReceipt,
   OutcomeDocument,
+  Sale,
 } from '../types';
 import { OUTCOME_REASONS } from '../types';
 import { initialIncomeReceipts } from './mockIncome';
 import { initialOutcomeDocuments } from './mockOutcome';
+import { initialSales } from './mockSales';
 import { initialWarehouseProducts } from './mockProducts';
 import {
   formatDateTime,
@@ -14,22 +16,9 @@ import {
   parseCustomDate,
 } from '../utils/dateUtils';
 
-// Explicit manual non-income movements (sales, inventory adjustments)
+// Explicit manual non-income movements (inventory adjustments)
 // Designed so that for every product, the chronological running balance is strictly non-negative at every step.
 const nonIncomeMovements: WarehouseMovement[] = [
-  {
-    id: 'mov-sale-1',
-    documentNumber: 'ЧЕК-#0001256',
-    type: 'outcome',
-    typeLabel: 'Продажа',
-    productId: 'prod-1',
-    productName: 'Чехол iPhone 15 Pro',
-    quantity: -1,
-    unit: 'шт.',
-    reason: 'Розничная продажа клиенту',
-    createdAt: getRelativeDateTimeFormatted(6, 16, 42),
-    author: 'Кассир-продавец',
-  },
   {
     id: 'mov-inv-1',
     documentNumber: 'ИНВ-2026-012',
@@ -43,49 +32,9 @@ const nonIncomeMovements: WarehouseMovement[] = [
     createdAt: getRelativeDateTimeFormatted(10, 9, 15),
     author: 'Администратор',
   },
-  {
-    id: 'mov-sale-2',
-    documentNumber: 'ЧЕК-#0001255',
-    type: 'outcome',
-    typeLabel: 'Продажа',
-    productId: 'prod-2',
-    productName: 'Кабель Type-C 1 м',
-    quantity: -2,
-    unit: 'шт.',
-    reason: 'Розничная продажа',
-    createdAt: getRelativeDateTimeFormatted(5, 15, 18),
-    author: 'Кассир-продавец',
-  },
-  {
-    id: 'mov-sale-3',
-    documentNumber: 'ЧЕК-#0001240',
-    type: 'outcome',
-    typeLabel: 'Продажа',
-    productId: 'prod-3',
-    productName: 'Защитное стекло iPhone 15',
-    quantity: -22,
-    unit: 'шт.',
-    reason: 'Розничная продажа партии клиентам',
-    createdAt: getRelativeDateTimeFormatted(1, 18, 30),
-    author: 'Кассир-продавец',
-  },
-  {
-    id: 'mov-sale-4',
-    documentNumber: 'ЧЕК-#0001250',
-    type: 'outcome',
-    typeLabel: 'Продажа',
-    productId: 'prod-4',
-    productName: 'Power Bank 20 000 mAh',
-    quantity: -3,
-    unit: 'шт.',
-    reason: 'Розничная продажа клиентам',
-    // Sale occurs today in the afternoon, after the morning delivery (inc-1 at 10:30)
-    createdAt: getRelativeDateTimeFormatted(0, 15, 10),
-    author: 'Кассир-продавец',
-  },
 ];
 
-// Explicit opening balances for products where initial movements complement receipts and write-offs
+// Explicit opening balances for products where initial movements complement receipts, sales, and write-offs
 const openingBalanceMovements: WarehouseMovement[] = [
   {
     id: 'mov-open-prod-2',
@@ -130,13 +79,14 @@ const openingBalanceMovements: WarehouseMovement[] = [
 
 /**
  * Pure generator creating initial warehouse movements fully synchronized
- * with initial products, receipts, and outcome documents so that:
+ * with initial products, receipts, outcomes, and sales so that:
  * currentStock === sum(movements.quantity) for every product.
  */
 export const createInitialMovements = (
   products: Product[],
   receipts: IncomeReceipt[],
-  outcomes: OutcomeDocument[] = initialOutcomeDocuments
+  outcomes: OutcomeDocument[] = initialOutcomeDocuments,
+  sales: Sale[] = initialSales
 ): WarehouseMovement[] => {
   // 1. Generate real income movements corresponding to each item in initial receipts
   const incomeMovements: WarehouseMovement[] = receipts.flatMap((receipt) =>
@@ -179,7 +129,25 @@ export const createInitialMovements = (
     }))
   );
 
-  // Products with dedicated income, outcome, and manual transactions
+  // 3. Generate real sale movements corresponding to each item in sales
+  const saleMovements: WarehouseMovement[] = sales.flatMap((sale) =>
+    sale.items.map((item, idx) => ({
+      id: `mov-sale-${sale.id}-${item.productId}-${idx}`,
+      documentNumber: sale.receiptNumber,
+      type: 'sale' as const,
+      typeLabel: 'Продажа',
+      productId: item.productId,
+      productName: item.productName,
+      quantity: -item.quantity,
+      unit: 'шт.',
+      reason: sale.comment || `Розничная продажа по чеку ${sale.receiptNumber}`,
+      createdAt: formatDateTime(sale.soldAt),
+      author: sale.responsiblePerson,
+      referenceId: sale.id,
+    }))
+  );
+
+  // Products with dedicated income, outcome, sales, and manual transactions
   const specialProductIds = new Set([
     'prod-1',
     'prod-2',
@@ -189,7 +157,7 @@ export const createInitialMovements = (
     'prod-8',
   ]);
 
-  // 3. Generate opening balances for all other catalog products with stock > 0
+  // 4. Generate opening balances for all other catalog products with stock > 0
   const otherOpeningBalances: WarehouseMovement[] = products
     .filter((p) => !specialProductIds.has(p.id) && p.stock > 0)
     .map((p) => ({
@@ -209,19 +177,31 @@ export const createInitialMovements = (
   const allMovements = [
     ...incomeMovements,
     ...outcomeMovements,
+    ...saleMovements,
     ...nonIncomeMovements,
     ...openingBalanceMovements,
     ...otherOpeningBalances,
   ];
 
-  // Sort descending by date for UI presentation (latest first)
-  allMovements.sort((a, b) => {
+  return sortMovementsDescending(allMovements);
+};
+
+/**
+ * Sorts warehouse movements descending by date (latest first) with a stable tie-breaker.
+ */
+export const sortMovementsDescending = (
+  movements: WarehouseMovement[]
+): WarehouseMovement[] => {
+  return [...movements].sort((a, b) => {
     const da = parseCustomDate(a.createdAt)?.getTime() ?? 0;
     const db = parseCustomDate(b.createdAt)?.getTime() ?? 0;
-    return db - da;
+    if (da !== db) return db - da;
+    // Stable tie-breaker for same date: negative movements (sale/write-off)
+    // appear before positive movements in reverse-chronological presentation
+    if (a.quantity < 0 && b.quantity >= 0) return -1;
+    if (a.quantity >= 0 && b.quantity < 0) return 1;
+    return b.id.localeCompare(a.id);
   });
-
-  return allMovements;
 };
 
 /**
@@ -234,7 +214,12 @@ export const validateMovementsChronology = (
   const sortedAsc = [...movements].sort((a, b) => {
     const da = parseCustomDate(a.createdAt)?.getTime() ?? 0;
     const db = parseCustomDate(b.createdAt)?.getTime() ?? 0;
-    return da - db;
+    if (da !== db) return da - db;
+    // Stable tie-breaker: positive movements (inflow/opening/receipt)
+    // are processed before negative movements (outflow/sale/write-off)
+    if (a.quantity >= 0 && b.quantity < 0) return -1;
+    if (a.quantity < 0 && b.quantity >= 0) return 1;
+    return 0;
   });
 
   const balances: Record<string, number> = {};
@@ -251,7 +236,8 @@ export const initialWarehouseMovements: WarehouseMovement[] =
   createInitialMovements(
     initialWarehouseProducts,
     initialIncomeReceipts,
-    initialOutcomeDocuments
+    initialOutcomeDocuments,
+    initialSales
   );
 
 // Verify strictly non-negative running stock in initial movements

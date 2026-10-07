@@ -1,0 +1,580 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: $spacing-md;
+  overflow-y: auto;
+}
+
+.modalDialog {
+  background-color: $color-surface;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-drawer;
+  border: 1px solid $color-border;
+  width: 100%;
+  max-width: 980px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalEnter 0.15s ease-out;
+
+  @media (max-width: 768px) {
+    max-height: 95vh;
+  }
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.modalHeader {
+  padding: $spacing-lg $spacing-xl;
+  border-bottom: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-shrink: 0;
+}
+
+.headerTitleWrapper {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.headerIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: $radius-md;
+  background-color: $color-primary-light;
+  color: $color-primary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+  margin: 0;
+}
+
+.modalSubtitle {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  margin: 2px 0 0;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: $color-text-muted;
+  cursor: pointer;
+  padding: $spacing-xs;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+
+  &:hover {
+    color: $color-text-primary;
+    background-color: $color-surface-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 1px;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.modalBody {
+  padding: $spacing-xl;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xl;
+  flex: 1;
+  min-height: 0;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-md;
+
+  @media (max-width: 860px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 580px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.paymentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-md;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+}
+
+.requiredStar {
+  color: #dc2626;
+  margin-left: 2px;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  padding: 8px 12px;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+
+  &[aria-invalid="true"] {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+  }
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 56px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-sm;
+}
+
+.sectionTitle {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.itemsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.itemRow {
+  display: grid;
+  grid-template-columns: 24px minmax(160px, 1.8fr) 75px 70px 95px 95px 80px 95px 36px;
+  gap: $spacing-xs;
+  align-items: start;
+  padding: $spacing-sm $spacing-md;
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  transition: background-color $transition-fast, border-color $transition-fast;
+
+  @media (max-width: 960px) {
+    grid-template-columns: 1fr 1fr;
+    gap: $spacing-sm;
+    padding: $spacing-md;
+  }
+}
+
+.rowNumber {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  margin-top: 10px;
+  text-align: center;
+
+  @media (max-width: 960px) {
+    display: none;
+  }
+}
+
+.miniLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  margin-bottom: 4px;
+}
+
+.itemColProduct {
+  min-width: 0;
+
+  @media (max-width: 960px) {
+    grid-column: span 2;
+  }
+}
+
+.itemColStock {
+  min-width: 0;
+}
+
+.itemColQty {
+  min-width: 0;
+}
+
+.itemColPrice {
+  min-width: 0;
+}
+
+.itemColDiscountType {
+  min-width: 0;
+}
+
+.itemColDiscountVal {
+  min-width: 0;
+}
+
+.itemColTotal {
+  min-width: 0;
+  text-align: right;
+}
+
+.itemColAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+
+  @media (max-width: 960px) {
+    margin-top: 0;
+    grid-column: span 2;
+    justify-content: flex-end;
+  }
+}
+
+.itemSelect,
+.itemInput {
+  width: 100%;
+  height: 36px;
+  padding: 6px 10px;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  font-size: $font-size-xs;
+  color: $color-text-primary;
+  transition: border-color $transition-fast;
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  }
+
+  &[aria-invalid="true"] {
+    border-color: #dc2626;
+  }
+}
+
+.productMeta {
+  display: flex;
+  gap: $spacing-sm;
+  font-size: 11px;
+  color: $color-text-muted;
+  margin-top: 4px;
+}
+
+.stockBadge {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+}
+
+.stockEmpty {
+  color: #dc2626;
+  font-weight: $font-weight-semibold;
+}
+
+.itemTotalVal {
+  height: 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.itemGrossVal {
+  font-size: 11px;
+  color: $color-text-muted;
+  text-decoration: line-through;
+}
+
+.deleteRowBtn {
+  background: none;
+  border: 1px solid transparent;
+  color: $color-text-muted;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: $radius-md;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all $transition-fast;
+
+  &:hover:not(:disabled) {
+    color: #dc2626;
+    background-color: #fee2e2;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+  }
+}
+
+.addItemBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  align-self: flex-start;
+  padding: 8px $spacing-md;
+  background-color: $color-surface;
+  border: 1px dashed $color-border-hover;
+  border-radius: $radius-md;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-primary;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-light;
+    border-color: $color-primary;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+  }
+}
+
+// Discount & Cash Payment section
+.discountSection {
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.cashPaymentBox {
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: $radius-md;
+  padding: $spacing-md;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.cashInputGroup {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+}
+
+.cashChangeDisplay {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.changeLabel {
+  font-size: 11px;
+  font-weight: $font-weight-medium;
+  color: #166534;
+}
+
+.changeValue {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-bold;
+  color: #15803d;
+}
+
+// Summary box
+.summaryBox {
+  background-color: $color-surface-hover;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-md $spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+}
+
+.summaryTotalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  padding-top: $spacing-sm;
+  border-top: 1px solid $color-border;
+}
+
+.totalHighlight {
+  font-size: $font-size-xl;
+  color: $color-primary;
+}
+
+.errorBanner {
+  background-color: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: $radius-md;
+  padding: $spacing-sm $spacing-md;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  color: #b91c1c;
+  font-size: $font-size-xs;
+}
+
+.errorText {
+  color: #dc2626;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.modalFooter {
+  padding: $spacing-md $spacing-xl;
+  border-top: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+  background-color: $color-surface-hover;
+  flex-shrink: 0;
+}
+
+.cancelBtn {
+  height: 40px;
+  padding: 0 $spacing-lg;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-surface-hover;
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+  }
+}
+
+.submitBtn {
+  height: 40px;
+  padding: 0 $spacing-xl;
+  background-color: $color-primary;
+  border: 1px solid transparent;
+  border-radius: $radius-md;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: $shadow-sm;
+  transition: background-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background-color: $color-primary-hover;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 2px;
+  }
+}

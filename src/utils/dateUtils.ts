@@ -5,12 +5,78 @@
 export const parseCustomDate = (dateStr: string): Date | null => {
   if (!dateStr) return null;
 
-  // Handle DD.MM.YYYY or DD.MM.YYYY HH:mm
-  const ruMatch = dateStr.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  // Handle DD.MM.YYYY or DD.MM.YYYY HH:mm or DD.MM.YYYY HH:mm:ss
+  const ruMatch = dateStr.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
   if (ruMatch) {
-    const [, d, m, y, h = '00', min = '00'] = ruMatch;
-    const date = new Date(Number(y), Number(m) - 1, Number(d), Number(h), Number(min));
-    return isNaN(date.getTime()) ? null : date;
+    const [, d, m, y, h = '00', min = '00', s = '00'] = ruMatch;
+    const year = Number(y);
+    const month = Number(m) - 1;
+    const day = Number(d);
+    const hours = Number(h);
+    const minutes = Number(min);
+    const seconds = Number(s);
+    const date = new Date(year, month, day, hours, minutes, seconds);
+    if (
+      isNaN(date.getTime()) ||
+      date.getFullYear() !== year ||
+      date.getMonth() !== month ||
+      date.getDate() !== day ||
+      date.getHours() !== hours ||
+      date.getMinutes() !== minutes ||
+      date.getSeconds() !== seconds
+    ) {
+      return null;
+    }
+    return date;
+  }
+
+  // Handle YYYY-MM-DD or YYYY-MM-DDTHH:mm or YYYY-MM-DD HH:mm (as local dates)
+  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (isoMatch) {
+    const [, y, m, d, h = '00', min = '00', s = '00'] = isoMatch;
+    const year = Number(y);
+    const month = Number(m) - 1;
+    const day = Number(d);
+    const hours = Number(h);
+    const minutes = Number(min);
+    const seconds = Number(s);
+    const date = new Date(year, month, day, hours, minutes, seconds);
+    if (
+      isNaN(date.getTime()) ||
+      date.getFullYear() !== year ||
+      date.getMonth() !== month ||
+      date.getDate() !== day ||
+      date.getHours() !== hours ||
+      date.getMinutes() !== minutes ||
+      date.getSeconds() !== seconds
+    ) {
+      return null;
+    }
+    return date;
+  }
+
+  const isoUtcMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/);
+  if (isoUtcMatch) {
+    const [, y, m, d, h, min, s] = isoUtcMatch;
+    const year = Number(y);
+    const month = Number(m) - 1;
+    const day = Number(d);
+    const hours = Number(h);
+    const minutes = Number(min);
+    const seconds = Number(s);
+    const date = new Date(Date.UTC(year, month, day, hours, minutes, seconds));
+    if (
+      isNaN(date.getTime()) ||
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month ||
+      date.getUTCDate() !== day ||
+      date.getUTCHours() !== hours ||
+      date.getUTCMinutes() !== minutes ||
+      date.getUTCSeconds() !== seconds
+    ) {
+      return null;
+    }
+    return date;
   }
 
   const parsed = new Date(dateStr);
@@ -129,4 +195,34 @@ export const getRelativeDateTimeFormatted = (
   minutes = 0
 ): string => {
   return formatDateTime(getRelativeDateISO(daysAgo, hours, minutes));
+};
+
+/**
+ * Returns an ISO date-time string guaranteed to be in the past (by minutesAgo minutes).
+ */
+export const getGuaranteedPastDateISO = (minutesAgo: number): string => {
+  const d = new Date(Date.now() - Math.max(1, minutesAgo) * 60 * 1000);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hh}:${mm}`;
+};
+
+/**
+ * Returns a formatted "DD.MM.YYYY HH:mm" string guaranteed to be in the past.
+ */
+export const getGuaranteedPastDateTimeFormatted = (minutesAgo: number): string => {
+  return formatDateTime(getGuaranteedPastDateISO(minutesAgo));
+};
+
+/**
+ * Returns a strictly padded "YYYY-MM-DD" calendar date key for stable date matching.
+ */
+export const formatCalendarDateKey = (date: Date = new Date()): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
