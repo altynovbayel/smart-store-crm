@@ -19,8 +19,6 @@ import type {
 import { PAYMENT_METHODS } from '../types/sale';
 import {
   parseCustomDate,
-  isToday,
-  isWithinDays,
   formatCalendarDateKey,
 } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
@@ -51,7 +49,25 @@ export const ALL_CATEGORIES: readonly ProductCategory[] = [
 ];
 
 /**
+ * Calculates inclusive calendar days between two calendar date strings (YYYY-MM-DD).
+ */
+export const calculateInclusiveCalendarDays = (
+  fromKey: string,
+  toKey: string
+): number | null => {
+  const dFrom = parseCustomDate(fromKey);
+  const dTo = parseCustomDate(toKey);
+  if (!dFrom || !dTo) return null;
+
+  const utcFrom = Date.UTC(dFrom.getFullYear(), dFrom.getMonth(), dFrom.getDate());
+  const utcTo = Date.UTC(dTo.getFullYear(), dTo.getMonth(), dTo.getDate());
+  const diffDays = Math.round((utcTo - utcFrom) / (1000 * 60 * 60 * 24));
+  return diffDays + 1;
+};
+
+/**
  * Validates report custom date range.
+ * Requires both from and to to be filled, valid, non-future, in order, and within 366 inclusive days.
  */
 export const validateReportDateRange = (
   from: string,
@@ -61,25 +77,27 @@ export const validateReportDateRange = (
   const errors: ReportDateRangeErrors = {};
   const todayKey = maxDateKey || formatCalendarDateKey(new Date());
 
-  if (from && from > todayKey) {
+  const trimmedFrom = from.trim();
+  const trimmedTo = to.trim();
+
+  if (!trimmedFrom) {
+    errors.from = 'Укажите дату начала периода';
+  } else if (trimmedFrom > todayKey) {
     errors.from = 'Дата не может быть в будущем';
   }
 
-  if (to && to > todayKey) {
+  if (!trimmedTo) {
+    errors.to = 'Укажите дату окончания периода';
+  } else if (trimmedTo > todayKey) {
     errors.to = 'Дата не может быть в будущем';
   }
 
-  if (from && to && from > to) {
-    errors.from = 'Начальная дата не может быть позже конечной';
-  }
-
-  if (from && to && from <= to) {
-    const dFrom = parseCustomDate(from);
-    const dTo = parseCustomDate(to);
-    if (dFrom && dTo) {
-      const diffTime = Math.abs(dTo.getTime() - dFrom.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays > 366) {
+  if (trimmedFrom && trimmedTo && !errors.from && !errors.to) {
+    if (trimmedFrom > trimmedTo) {
+      errors.from = 'Начальная дата не может быть позже конечной';
+    } else {
+      const inclusiveDays = calculateInclusiveCalendarDays(trimmedFrom, trimmedTo);
+      if (inclusiveDays === null || inclusiveDays > 366) {
         errors.to = 'Максимальный диапазон отчёта — 366 дней';
       }
     }
@@ -89,7 +107,66 @@ export const validateReportDateRange = (
 };
 
 /**
- * Filters sales by selected report period.
+ * Pure function to resolve effective inclusive calendar date boundaries for any report period.
+ * Returns { fromKey, toKey } or null if custom range is incomplete or invalid.
+ */
+export const resolveEffectiveReportDateRange = (
+  period: ReportPeriod,
+  dateRange: ReportDateRange,
+  referenceDateKey?: string
+): { fromKey: string; toKey: string } | null => {
+  const today = referenceDateKey
+    ? parseCustomDate(referenceDateKey) ?? new Date()
+    : new Date();
+  const todayKey = formatCalendarDateKey(today);
+
+  if (period === 'today') {
+    return { fromKey: todayKey, toKey: todayKey };
+  }
+
+  if (period === 'week') {
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 6);
+    return {
+      fromKey: formatCalendarDateKey(startDate),
+      toKey: todayKey,
+    };
+  }
+
+  if (period === 'month') {
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 29);
+    return {
+      fromKey: formatCalendarDateKey(startDate),
+      toKey: todayKey,
+    };
+  }
+
+  if (period === 'custom') {
+    const trimmedFrom = dateRange.from?.trim() || '';
+    const trimmedTo = dateRange.to?.trim() || '';
+
+    // Both dates are strictly required
+    if (!trimmedFrom || !trimmedTo) {
+      return null;
+    }
+
+    const errors = validateReportDateRange(trimmedFrom, trimmedTo, todayKey);
+    if (errors.from || errors.to) {
+      return null;
+    }
+
+    return {
+      fromKey: trimmedFrom,
+      toKey: trimmedTo,
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Filters sales by selected report period using unified effective date range.
  */
 export const filterSalesByReportPeriod = (
   sales: readonly Sale[],
@@ -97,50 +174,24 @@ export const filterSalesByReportPeriod = (
   dateRange: ReportDateRange,
   referenceDateKey?: string
 ): Sale[] => {
+  const effectiveRange = resolveEffectiveReportDateRange(
+    period,
+    dateRange,
+    referenceDateKey
+  );
+
+  if (!effectiveRange) {
+    return [];
+  }
+
+  const { fromKey, toKey } = effectiveRange;
+
   return sales.filter((sale) => {
-    if (period === 'today') {
-      return isToday(sale.soldAt, referenceDateKey);
-    }
+    const saleDate = parseCustomDate(sale.soldAt);
+    if (!saleDate) return false;
 
-    if (period === 'week') {
-      return isWithinDays(sale.soldAt, 7, referenceDateKey);
-    }
-
-    if (period === 'month') {
-      return isWithinDays(sale.soldAt, 30, referenceDateKey);
-    }
-
-    if (period === 'custom') {
-      const errors = validateReportDateRange(
-        dateRange.from,
-        dateRange.to,
-        referenceDateKey
-      );
-      if (errors.from || errors.to) {
-        return false;
-      }
-
-      const saleDate = parseCustomDate(sale.soldAt);
-      if (!saleDate) return false;
-
-      const saleDateKey = formatCalendarDateKey(saleDate);
-
-      if (dateRange.from && saleDateKey < dateRange.from) {
-        return false;
-      }
-      if (dateRange.to && saleDateKey > dateRange.to) {
-        return false;
-      }
-
-      const todayKey = referenceDateKey || formatCalendarDateKey(new Date());
-      if (saleDateKey > todayKey) {
-        return false;
-      }
-
-      return true;
-    }
-
-    return true;
+    const saleDateKey = formatCalendarDateKey(saleDate);
+    return saleDateKey >= fromKey && saleDateKey <= toKey;
   });
 };
 
@@ -194,6 +245,7 @@ export const calculateSalesReportSummary = (
 
 /**
  * Generates continuous daily timeline data points for sales revenue chart and CSV export.
+ * Guaranteed to generate all days in the effective range (up to 366 days) without truncation.
  */
 export const generateDailyRevenueDataPoints = (
   sales: readonly Sale[],
@@ -201,66 +253,33 @@ export const generateDailyRevenueDataPoints = (
   dateRange: ReportDateRange,
   referenceDateKey?: string
 ): DailySalesRevenuePoint[] => {
-  const today = referenceDateKey
-    ? parseCustomDate(referenceDateKey) ?? new Date()
-    : new Date();
-  const todayKey = formatCalendarDateKey(today);
+  const effectiveRange = resolveEffectiveReportDateRange(
+    period,
+    dateRange,
+    referenceDateKey
+  );
 
-  let startDate: Date;
-  let endDate: Date;
-
-  if (period === 'today') {
-    startDate = new Date(today);
-    endDate = new Date(today);
-  } else if (period === 'week') {
-    startDate = new Date(today);
-    startDate.setDate(today.getDate() - 6);
-    endDate = new Date(today);
-  } else if (period === 'month') {
-    startDate = new Date(today);
-    startDate.setDate(today.getDate() - 29);
-    endDate = new Date(today);
-  } else {
-    // Custom period
-    const parsedFrom = dateRange.from ? parseCustomDate(dateRange.from) : null;
-    const parsedTo = dateRange.to ? parseCustomDate(dateRange.to) : null;
-
-    if (parsedFrom && parsedTo && dateRange.from <= dateRange.to) {
-      startDate = new Date(parsedFrom);
-      endDate = new Date(parsedTo);
-    } else if (parsedFrom) {
-      startDate = new Date(parsedFrom);
-      endDate = new Date(today);
-    } else if (parsedTo) {
-      startDate = new Date(parsedTo);
-      startDate.setDate(parsedTo.getDate() - 6);
-      endDate = new Date(parsedTo);
-    } else {
-      startDate = new Date(today);
-      startDate.setDate(today.getDate() - 6);
-      endDate = new Date(today);
-    }
-
-    if (endDate > today) {
-      endDate = new Date(today);
-    }
+  if (!effectiveRange) {
+    return [];
   }
 
-  // Generate date keys list with safety cap to avoid hanging on extreme ranges
+  const { fromKey, toKey } = effectiveRange;
+  const startDate = parseCustomDate(fromKey);
+  const endDate = parseCustomDate(toKey);
+
+  if (!startDate || !endDate) {
+    return [];
+  }
+
+  // Generate date keys list for every calendar date from fromKey to toKey inclusive
   const dateKeys: string[] = [];
-  const current = new Date(startDate);
+  const current = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
   const MAX_TIMELINE_DAYS = 366;
 
-  while (current <= endDate && dateKeys.length < MAX_TIMELINE_DAYS) {
-    const key = formatCalendarDateKey(current);
-    if (key <= todayKey) {
-      dateKeys.push(key);
-    }
+  while (current <= end && dateKeys.length < MAX_TIMELINE_DAYS) {
+    dateKeys.push(formatCalendarDateKey(current));
     current.setDate(current.getDate() + 1);
-  }
-
-  if (dateKeys.length === 0) {
-    dateKeys.push(todayKey);
   }
 
   // Pre-group sales by calendar date key
@@ -269,10 +288,12 @@ export const generateDailyRevenueDataPoints = (
     const d = parseCustomDate(sale.soldAt);
     if (d) {
       const k = formatCalendarDateKey(d);
-      if (!salesByDate[k]) {
-        salesByDate[k] = [];
+      if (k >= fromKey && k <= toKey) {
+        if (!salesByDate[k]) {
+          salesByDate[k] = [];
+        }
+        salesByDate[k].push(sale);
       }
-      salesByDate[k].push(sale);
     }
   }
 

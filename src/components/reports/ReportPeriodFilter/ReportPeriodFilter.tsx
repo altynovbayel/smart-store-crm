@@ -78,22 +78,14 @@ export const ReportPeriodFilter = ({
     const newFrom = e.target.value;
     const newDraft = { ...dateDraft, from: newFrom };
     setDateDraft(newDraft);
-
-    const errors = validateReportDateRange(newDraft.from, newDraft.to, todayKey);
-    if (!errors.from && !errors.to) {
-      onDateRangeChange(newDraft);
-    }
+    onDateRangeChange(newDraft);
   };
 
   const handleDateToChange = (e: ChangeEvent<HTMLInputElement>) => {
     const newTo = e.target.value;
     const newDraft = { ...dateDraft, to: newTo };
     setDateDraft(newDraft);
-
-    const errors = validateReportDateRange(newDraft.from, newDraft.to, todayKey);
-    if (!errors.from && !errors.to) {
-      onDateRangeChange(newDraft);
-    }
+    onDateRangeChange(newDraft);
   };
 
   const isExportBlocked = isExportDisabled || (period === 'custom' && hasDateErrors);
@@ -146,7 +138,7 @@ export const ReportPeriodFilter = ({
             <span className={styles.dateLabel}>С:</span>
             <input
               type="date"
-              className={`${styles.dateInput} ${dateErrors.from ? styles.inputError : ''}`}
+              className={`${styles.dateInput} ${dateErrors.from && dateDraft.from ? styles.inputError : ''}`}
               value={dateDraft.from}
               max={dateDraft.to || todayKey}
               onChange={handleDateFromChange}
@@ -158,7 +150,7 @@ export const ReportPeriodFilter = ({
             <span className={styles.dateLabel}>По:</span>
             <input
               type="date"
-              className={`${styles.dateInput} ${dateErrors.to ? styles.inputError : ''}`}
+              className={`${styles.dateInput} ${dateErrors.to && dateDraft.to ? styles.inputError : ''}`}
               value={dateDraft.to}
               min={dateDraft.from || undefined}
               max={todayKey}
@@ -169,7 +161,9 @@ export const ReportPeriodFilter = ({
 
           {(dateErrors.from || dateErrors.to) && (
             <span className={styles.errorMessage} role="alert">
-              {dateErrors.from || dateErrors.to}
+              {!dateDraft.from && !dateDraft.to
+                ? 'Выберите даты начала и окончания периода'
+                : dateErrors.from || dateErrors.to}
             </span>
           )}
         </div>

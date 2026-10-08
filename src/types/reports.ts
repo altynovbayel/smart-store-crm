@@ -17,6 +17,11 @@ export interface ReportDateRange {
   to: string;
 }
 
+export interface EffectiveReportDateRange {
+  fromKey: string;
+  toKey: string;
+}
+
 export interface ReportDateRangeErrors {
   from?: string;
   to?: string;
