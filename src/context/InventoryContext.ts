@@ -39,7 +39,10 @@ export interface InventoryContextValue {
   getOutcomeDocumentById: (id: string) => OutcomeDocument | undefined;
   getSaleById: (id: string) => Sale | undefined;
   addProduct: (data: ProductFormData) => void;
-  updateProduct: (id: string, data: ProductFormData) => void;
+  updateProduct: (
+    id: string,
+    data: ProductFormData
+  ) => { success: boolean; error?: string; field?: 'stock' | 'purchasePrice' };
   archiveProduct: (id: string) => { success: boolean; error?: string };
   addIncomeReceipt: (
     data: IncomeReceiptFormData

@@ -2,11 +2,14 @@ import { Trash2 } from 'lucide-react';
 import type { Product, OutcomeFormItemState } from '../../../types';
 import { calculateOutcomeSubtotal } from '../../../utils/outcomeCalculations';
 import { formatCurrency } from '../../../utils/formatUtils';
+import { normalizeDocumentTimestamp } from '../../../utils/dateUtils';
+import { getHistoricalPurchasePrice } from '../../../utils/productUtils';
 import styles from './OutcomeFormModal.module.scss';
 
 export interface OutcomeFormItemRowProps {
   index: number;
   item: OutcomeFormItemState;
+  documentDate?: string;
   activeProducts: Product[];
   selectedProduct?: Product;
   allItems: OutcomeFormItemState[];
@@ -20,6 +23,7 @@ export interface OutcomeFormItemRowProps {
 export const OutcomeFormItemRow = ({
   index,
   item,
+  documentDate,
   activeProducts,
   selectedProduct,
   allItems,
@@ -29,8 +33,15 @@ export const OutcomeFormItemRow = ({
   onQuantityChange,
   onRemove,
 }: OutcomeFormItemRowProps) => {
+  const docTimestamp = normalizeDocumentTimestamp(documentDate);
+  const purchasePrice = selectedProduct
+    ? (docTimestamp > 0
+        ? getHistoricalPurchasePrice(selectedProduct, docTimestamp)
+        : selectedProduct.purchasePrice)
+    : 0;
+
   const subtotal = selectedProduct
-    ? calculateOutcomeSubtotal(item.rawQuantity, selectedProduct.purchasePrice)
+    ? calculateOutcomeSubtotal(item.rawQuantity, purchasePrice)
     : null;
 
   const prodErr = errors[`item-${item.id}-product`];
@@ -133,7 +144,7 @@ export const OutcomeFormItemRow = ({
       <div className={styles.itemColPrice}>
         <span className={styles.miniLabel}>Себестоимость</span>
         <div className={styles.itemReadOnlyVal}>
-          {selectedProduct ? formatCurrency(selectedProduct.purchasePrice) : '—'}
+          {selectedProduct ? formatCurrency(purchasePrice) : '—'}
         </div>
       </div>
 

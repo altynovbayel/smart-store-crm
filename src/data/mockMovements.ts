@@ -11,7 +11,6 @@ import { initialOutcomeDocuments } from './mockOutcome';
 import { initialSales } from './mockSales';
 import { initialWarehouseProducts } from './mockProducts';
 import {
-  formatDateTime,
   getRelativeDateTimeFormatted,
   parseCustomDate,
 } from '../utils/dateUtils';
@@ -102,7 +101,7 @@ export const createInitialMovements = (
       reason: receipt.comment
         ? `Приход от поставщика «${receipt.supplier}» (${receipt.comment})`
         : `Поступление от поставщика «${receipt.supplier}»`,
-      createdAt: formatDateTime(receipt.receivedAt),
+      createdAt: receipt.receivedAt,
       author: receipt.responsiblePerson,
       receiptId: receipt.id,
       referenceId: receipt.id,
@@ -123,7 +122,7 @@ export const createInitialMovements = (
       reason: outcome.comment
         ? `${OUTCOME_REASONS[outcome.reason]} (${outcome.comment})`
         : OUTCOME_REASONS[outcome.reason],
-      createdAt: formatDateTime(outcome.documentDate),
+      createdAt: outcome.documentDate,
       author: outcome.responsiblePerson,
       referenceId: outcome.id,
     }))
@@ -141,7 +140,7 @@ export const createInitialMovements = (
       quantity: -item.quantity,
       unit: 'шт.',
       reason: sale.comment || `Розничная продажа по чеку ${sale.receiptNumber}`,
-      createdAt: formatDateTime(sale.soldAt),
+      createdAt: sale.soldAt,
       author: sale.responsiblePerson,
       referenceId: sale.id,
     }))

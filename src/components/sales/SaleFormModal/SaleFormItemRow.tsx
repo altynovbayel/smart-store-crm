@@ -2,11 +2,14 @@ import { Trash2 } from 'lucide-react';
 import type { Product, SaleFormItemState, DiscountType } from '../../../types';
 import { calculateSaleItemSubtotals } from '../../../utils/saleCalculations';
 import { formatCurrency } from '../../../utils/formatUtils';
+import { normalizeDocumentTimestamp } from '../../../utils/dateUtils';
+import { getHistoricalPurchasePrice } from '../../../utils/productUtils';
 import styles from './SaleFormModal.module.scss';
 
 export interface SaleFormItemRowProps {
   index: number;
   item: SaleFormItemState;
+  soldAt?: string;
   activeProducts: Product[];
   selectedProduct?: Product;
   allItems: SaleFormItemState[];
@@ -23,6 +26,7 @@ export interface SaleFormItemRowProps {
 export const SaleFormItemRow = ({
   index,
   item,
+  soldAt,
   activeProducts,
   selectedProduct,
   allItems,
@@ -35,11 +39,18 @@ export const SaleFormItemRow = ({
   onDiscountValueChange,
   onRemove,
 }: SaleFormItemRowProps) => {
+  const soldAtTimestamp = normalizeDocumentTimestamp(soldAt);
+  const costPrice = selectedProduct
+    ? (soldAtTimestamp > 0
+        ? getHistoricalPurchasePrice(selectedProduct, soldAtTimestamp)
+        : selectedProduct.purchasePrice)
+    : 0;
+
   const itemCalc = selectedProduct
     ? calculateSaleItemSubtotals(
         item.rawQuantity,
         item.rawUnitPrice,
-        selectedProduct.purchasePrice,
+        costPrice,
         item.discountType,
         item.rawDiscountValue
       )

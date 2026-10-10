@@ -25,9 +25,15 @@ import {
   calculateStockStatus,
   getCategoryLabel,
   getIconTypeByCategory,
+  getHistoricalPurchasePrice,
 } from '../utils/productUtils';
 import { toCents, fromCents } from '../utils/incomeCalculations';
-import { formatDateTime, parseCustomDate } from '../utils/dateUtils';
+import {
+  formatDateTime,
+  parseCustomDate,
+  getDocumentTimestamp,
+  normalizeDocumentTimestamp,
+} from '../utils/dateUtils';
 import { calculatePercentDiscountCents } from '../utils/saleCalculations';
 import {
   InventoryContext,
@@ -35,16 +41,6 @@ import {
   type InventoryAction,
   type InventoryContextValue,
 } from './InventoryContext';
-
-// Helper to format movement timestamps like "24.09.2026 17:35"
-const formatMovementDate = (date: Date): string => {
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${day}.${month}.${year} ${hours}:${minutes}`;
-};
 
 const initialState: InventoryState = createInitialInventoryState();
 
@@ -67,15 +63,29 @@ const inventoryReducer = (
       }
       const status = calculateStockStatus(cleanStock, cleanMinStock);
 
+      const now = Math.floor(Date.now() / 1000) * 1000;
+      const initialPrice = Math.max(0, data.purchasePrice);
+
+      let newProductId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? `prod-${crypto.randomUUID()}`
+          : `prod-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      while (state.products.some((p) => p.id === newProductId)) {
+        newProductId =
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? `prod-${crypto.randomUUID()}`
+            : `prod-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      }
+
       const newProduct: Product = {
-        id: `prod-${Date.now()}`,
+        id: newProductId,
         name: data.name.trim(),
         sku: data.sku.trim().toUpperCase(),
         barcode: data.barcode.trim(),
         category: data.category,
         categoryLabel: getCategoryLabel(data.category),
         description: data.description.trim(),
-        purchasePrice: Math.max(0, data.purchasePrice),
+        purchasePrice: initialPrice,
         sellingPrice: Math.max(0, data.sellingPrice),
         stock: cleanStock,
         minStockThreshold: cleanMinStock,
@@ -83,6 +93,15 @@ const inventoryReducer = (
         unit: 'шт.',
         iconType: getIconTypeByCategory(data.category),
         isArchived: false,
+        priceUpdatedAt: now,
+        priceHistory: [
+          {
+            id: 1,
+            purchasePrice: initialPrice,
+            effectiveFrom: 0,
+            createdAt: now,
+          },
+        ],
       };
 
       const newMovements = [...state.movements];
@@ -90,8 +109,8 @@ const inventoryReducer = (
       // If initial stock is greater than 0, record an opening_balance movement
       if (cleanStock > 0) {
         const openingMov: WarehouseMovement = {
-          id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          documentNumber: `ВВОД-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
+          id: `mov-${now}-${Math.random().toString(36).substring(2, 6)}`,
+          documentNumber: `ВВОД-${new Date(now).getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
           type: 'opening_balance',
           typeLabel: 'Начальный остаток',
           productId: newProduct.id,
@@ -99,7 +118,7 @@ const inventoryReducer = (
           quantity: cleanStock,
           unit: newProduct.unit,
           reason: 'Ввод начального остатка при создании товара',
-          createdAt: formatMovementDate(new Date()),
+          createdAt: new Date(now).toISOString(),
           author: 'Администратор',
         };
         newMovements.unshift(openingMov);
@@ -129,6 +148,64 @@ const inventoryReducer = (
       }
       const status = calculateStockStatus(cleanStock, cleanMinStock);
       const quantityDelta = cleanStock - oldProduct.stock;
+      const newPurchasePrice = Math.max(0, data.purchasePrice);
+      const isPriceChanged = oldProduct.purchasePrice !== newPurchasePrice;
+
+      const now = Date.now();
+      const effectiveFrom = Math.floor(now / 1000) * 1000;
+
+      const nextPriceHistory = oldProduct.priceHistory ? [...oldProduct.priceHistory] : [];
+      if (nextPriceHistory.length === 0) {
+        nextPriceHistory.push({
+          id: 1,
+          purchasePrice: oldProduct.purchasePrice,
+          effectiveFrom: 0,
+          createdAt: 0,
+        });
+      }
+
+      if (isPriceChanged) {
+        const nextPriceEvent = nextPriceHistory.find((e) => e.effectiveFrom > effectiveFrom);
+        const nextPriceTime = nextPriceEvent ? nextPriceEvent.effectiveFrom : null;
+
+        const hasConflictingSale = state.sales.some((s) => {
+          const saleTime = getDocumentTimestamp(s.soldAt);
+          if (saleTime < effectiveFrom) return false;
+          if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
+          return s.items.some(
+            (si) => si.productId === oldProduct.id && Math.abs(si.purchasePriceSnapshot - newPurchasePrice) > 0.001
+          );
+        });
+        if (hasConflictingSale) {
+          return state;
+        }
+
+        const hasConflictingOutcome = state.outcomeDocuments.some((doc) => {
+          const docTime = getDocumentTimestamp(doc.documentDate);
+          if (docTime < effectiveFrom) return false;
+          if (nextPriceTime !== null && docTime >= nextPriceTime) return false;
+          return doc.items.some(
+            (oi) => oi.productId === oldProduct.id && Math.abs(oi.purchasePrice - newPurchasePrice) > 0.001
+          );
+        });
+        if (hasConflictingOutcome) {
+          return state;
+        }
+
+        const nextId = Math.max(0, ...nextPriceHistory.map((e) => e.id ?? 0)) + 1;
+        nextPriceHistory.push({
+          id: nextId,
+          purchasePrice: newPurchasePrice,
+          effectiveFrom: effectiveFrom,
+          createdAt: now,
+        });
+        nextPriceHistory.sort(
+          (a, b) => a.effectiveFrom - b.effectiveFrom || a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0)
+        );
+      }
+
+      const latestEntry = nextPriceHistory.length > 0 ? nextPriceHistory[nextPriceHistory.length - 1] : null;
+      const catalogPurchasePrice = latestEntry ? latestEntry.purchasePrice : newPurchasePrice;
 
       const updatedProduct: Product = {
         ...oldProduct,
@@ -138,12 +215,14 @@ const inventoryReducer = (
         category: data.category,
         categoryLabel: getCategoryLabel(data.category),
         description: data.description.trim(),
-        purchasePrice: Math.max(0, data.purchasePrice),
+        purchasePrice: catalogPurchasePrice,
         sellingPrice: Math.max(0, data.sellingPrice),
         stock: cleanStock,
         minStockThreshold: cleanMinStock,
         status,
         iconType: getIconTypeByCategory(data.category),
+        priceUpdatedAt: isPriceChanged ? now : oldProduct.priceUpdatedAt,
+        priceHistory: nextPriceHistory,
       };
 
       const newMovements = [...state.movements];
@@ -151,8 +230,8 @@ const inventoryReducer = (
       // If stock has changed, record an inventory_adjustment movement
       if (quantityDelta !== 0) {
         const adjMov: WarehouseMovement = {
-          id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          documentNumber: `КОРР-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
+          id: `mov-${now}-${Math.random().toString(36).substring(2, 6)}`,
+          documentNumber: `КОРР-${new Date(now).getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
           type: 'inventory_adjustment',
           typeLabel: 'Корректировка остатка',
           productId: oldProduct.id,
@@ -163,10 +242,14 @@ const inventoryReducer = (
             quantityDelta > 0
               ? 'Увеличение остатка при инвентаризации/редактировании'
               : 'Уменьшение остатка при списании/редактировании',
-          createdAt: formatMovementDate(new Date()),
+          createdAt: new Date(now).toISOString(),
           author: 'Администратор',
         };
         newMovements.unshift(adjMov);
+
+        if (!validateMovementsChronology(newMovements)) {
+          return state;
+        }
       }
 
       return {
@@ -210,6 +293,9 @@ const inventoryReducer = (
         return state;
       }
 
+      const now = Date.now();
+      const receiptTime = normalizeDocumentTimestamp(data.receivedAt);
+
       const seenIds = new Set<string>();
       for (const item of data.items) {
         if (seenIds.has(item.productId)) {
@@ -227,20 +313,45 @@ const inventoryReducer = (
         if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
           return state;
         }
-        if (!Number.isFinite(item.purchasePrice) || item.purchasePrice < 0) {
+        if (!Number.isFinite(item.purchasePrice) || item.purchasePrice < 0 || item.purchasePrice > prod.sellingPrice) {
           return state;
         }
         const newStock = prod.stock + item.quantity;
         if (!Number.isSafeInteger(newStock) || newStock > 100_000_000) {
           return state;
         }
+
+        const nextPriceEvent = prod.priceHistory?.find((e) => e.effectiveFrom > receiptTime);
+        const nextPriceTime = nextPriceEvent ? nextPriceEvent.effectiveFrom : null;
+
+        // Conflict check: existing sales in [receiptTime, nextPriceTime) with different price
+        const hasConflictingSale = state.sales.some((s) => {
+          const saleTime = getDocumentTimestamp(s.soldAt);
+          if (saleTime < receiptTime) return false;
+          if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
+          return s.items.some(
+            (si) => si.productId === prod.id && Math.abs(si.purchasePriceSnapshot - item.purchasePrice) > 0.001
+          );
+        });
+        if (hasConflictingSale) return state;
+
+        // Conflict check: existing write-offs in [receiptTime, nextPriceTime) with different price
+        const hasConflictingOutcome = state.outcomeDocuments.some((doc) => {
+          const docTime = getDocumentTimestamp(doc.documentDate);
+          if (docTime < receiptTime) return false;
+          if (nextPriceTime !== null && docTime >= nextPriceTime) return false;
+          return doc.items.some(
+            (oi) => oi.productId === prod.id && Math.abs(oi.purchasePrice - item.purchasePrice) > 0.001
+          );
+        });
+        if (hasConflictingOutcome) return state;
       }
 
       // Generate sequential receipt number
       const currentYear = new Date().getFullYear();
       const nextIndex = state.incomeReceipts.length + 93;
       const receiptNumber = `ПР-${currentYear}-${String(nextIndex).padStart(3, '0')}`;
-      const nowStr = formatMovementDate(new Date());
+      const nowStr = new Date().toISOString();
 
       // Build receipt items with exact integer cents calculation
       let receiptTotalCents = 0;
@@ -276,12 +387,14 @@ const inventoryReducer = (
       const totalQuantity = receiptItems.reduce((sum, it) => sum + it.quantity, 0);
       const totalAmount = fromCents(receiptTotalCents);
 
+      const receivedAtIso = new Date(receiptTime).toISOString();
+
       const newReceipt: IncomeReceipt = {
         id: `inc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         receiptNumber,
         supplier: data.supplier.trim(),
         documentNumber: data.documentNumber?.trim() || '—',
-        receivedAt: data.receivedAt,
+        receivedAt: receivedAtIso,
         createdAt: nowStr,
         responsiblePerson: data.responsiblePerson?.trim() || 'Администратор',
         comment: data.comment?.trim() || undefined,
@@ -297,13 +410,37 @@ const inventoryReducer = (
         if (!incomingItem) return p;
 
         const newStock = p.stock + incomingItem.quantity;
-        const newPurchasePrice = incomingItem.purchasePrice;
+        let history = p.priceHistory ? [...p.priceHistory] : [];
+        if (history.length === 0) {
+          history.push({
+            id: 1,
+            purchasePrice: p.purchasePrice,
+            effectiveFrom: 0,
+            createdAt: 0,
+          });
+        }
+
+        const nextId = Math.max(0, ...history.map((e) => e.id ?? 0)) + 1;
+        history.push({
+          id: nextId,
+          purchasePrice: incomingItem.purchasePrice,
+          effectiveFrom: receiptTime,
+          createdAt: now,
+        });
+        history.sort(
+          (a, b) => a.effectiveFrom - b.effectiveFrom || a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0)
+        );
+
+        const latestEntry = history[history.length - 1];
+        const newPurchasePrice = latestEntry.purchasePrice;
         const newStatus = calculateStockStatus(newStock, p.minStockThreshold);
 
         return {
           ...p,
           stock: newStock,
           purchasePrice: newPurchasePrice,
+          priceUpdatedAt: latestEntry.createdAt,
+          priceHistory: history,
           status: newStatus,
         };
       });
@@ -323,7 +460,7 @@ const inventoryReducer = (
           reason: data.comment?.trim()
             ? `Приход от поставщика «${newReceipt.supplier}» (${data.comment.trim()})`
             : `Поступление от поставщика «${newReceipt.supplier}»`,
-          createdAt: formatDateTime(newReceipt.receivedAt),
+          createdAt: newReceipt.receivedAt,
           author: newReceipt.responsiblePerson,
           receiptId: newReceipt.id,
           referenceId: newReceipt.id,
@@ -381,13 +518,15 @@ const inventoryReducer = (
       const currentYear = new Date().getFullYear();
       const nextIndex = state.outcomeDocuments.length + 4;
       const outcomeNumber = `СП-${currentYear}-${String(nextIndex).padStart(3, '0')}`;
-      const nowStr = formatMovementDate(new Date());
+      const docTimestamp = normalizeDocumentTimestamp(data.documentDate);
+      const nowStr = new Date().toISOString();
 
       // Build outcome items with exact integer cents calculation
       let docTotalCents = 0;
       for (const item of data.items) {
         const prod = state.products.find((p) => p.id === item.productId)!;
-        const lineCents = item.quantity * toCents(prod.purchasePrice);
+        const itemCost = getHistoricalPurchasePrice(prod, docTimestamp);
+        const lineCents = item.quantity * toCents(itemCost);
         if (
           !Number.isSafeInteger(lineCents) ||
           !Number.isSafeInteger(docTotalCents + lineCents)
@@ -402,7 +541,8 @@ const inventoryReducer = (
 
       const outcomeItems: OutcomeItem[] = data.items.map((item, index) => {
         const prod = state.products.find((p) => p.id === item.productId)!;
-        const lineCents = item.quantity * toCents(prod.purchasePrice);
+        const itemCost = getHistoricalPurchasePrice(prod, docTimestamp);
+        const lineCents = item.quantity * toCents(itemCost);
 
         return {
           id: `item-out-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
@@ -410,7 +550,7 @@ const inventoryReducer = (
           productName: prod.name,
           sku: prod.sku,
           quantity: item.quantity,
-          purchasePrice: prod.purchasePrice,
+          purchasePrice: itemCost,
           totalCost: fromCents(lineCents),
         };
       });
@@ -418,11 +558,13 @@ const inventoryReducer = (
       const totalQuantity = outcomeItems.reduce((sum, it) => sum + it.quantity, 0);
       const totalCost = fromCents(docTotalCents);
 
+      const docDateIso = new Date(docTimestamp).toISOString();
+
       const newOutcome: OutcomeDocument = {
         id: `out-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         outcomeNumber,
         reason: data.reason,
-        documentDate: data.documentDate,
+        documentDate: docDateIso,
         createdAt: nowStr,
         responsiblePerson: data.responsiblePerson?.trim() || 'Администратор',
         comment: data.comment?.trim() || undefined,
@@ -463,7 +605,7 @@ const inventoryReducer = (
           reason: data.comment?.trim()
             ? `${reasonText} (${data.comment.trim()})`
             : reasonText,
-          createdAt: formatDateTime(newOutcome.documentDate),
+          createdAt: newOutcome.documentDate,
           author: newOutcome.responsiblePerson,
           referenceId: newOutcome.id,
         };
@@ -531,12 +673,15 @@ const inventoryReducer = (
       let itemsFinalCents = 0;
       let totalCostCents = 0;
 
+      const soldAtTimestamp = normalizeDocumentTimestamp(data.soldAt);
+
       // Validate all line monetary amounts and safe integer bounds
       for (const item of data.items) {
         const prod = state.products.find((p) => p.id === item.productId);
         if (!prod) return state;
         const unitPriceCents = toCents(item.unitPrice);
-        const costPriceCents = toCents(prod.purchasePrice);
+        const costPrice = getHistoricalPurchasePrice(prod, soldAtTimestamp);
+        const costPriceCents = toCents(costPrice);
         const lineGrossCents = item.quantity * unitPriceCents;
         const lineCostCents = item.quantity * costPriceCents;
 
@@ -567,7 +712,8 @@ const inventoryReducer = (
       const saleItems: SaleItem[] = data.items.map((item, index) => {
         const prod = state.products.find((p) => p.id === item.productId)!;
         const unitPriceCents = toCents(item.unitPrice);
-        const costPriceCents = toCents(prod.purchasePrice);
+        const costPrice = getHistoricalPurchasePrice(prod, soldAtTimestamp);
+        const costPriceCents = toCents(costPrice);
         const lineGrossCents = item.quantity * unitPriceCents;
 
         let lineDiscountCents = 0;
@@ -589,7 +735,7 @@ const inventoryReducer = (
           sku: prod.sku,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          purchasePriceSnapshot: prod.purchasePrice,
+          purchasePriceSnapshot: costPrice,
           grossAmount: fromCents(lineGrossCents),
           discountType: item.discountType,
           discountValue: item.discountValue,
@@ -665,13 +811,14 @@ const inventoryReducer = (
         existingNumbers.length > 0 ? Math.max(...existingNumbers) : 1256;
       const nextIndex = Math.max(maxNumber + 1, 1257);
       const receiptNumber = `ЧЕК-#${String(nextIndex).padStart(7, '0')}`;
-      const nowStr = formatMovementDate(new Date());
-      const formattedSoldAt = formatDateTime(data.soldAt);
+      const nowStr = new Date().toISOString();
+      const soldAtIso = new Date(soldAtTimestamp).toISOString();
+      const formattedSoldAt = formatDateTime(soldAtIso);
 
       const newSale: Sale = {
         id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         receiptNumber,
-        soldAt: data.soldAt,
+        soldAt: soldAtIso,
         createdAt: nowStr,
         paymentMethod: data.paymentMethod,
         paymentMethodLabel: PAYMENT_METHODS[data.paymentMethod],
@@ -728,7 +875,7 @@ const inventoryReducer = (
           reason: data.comment?.trim()
             ? `Продажа по чеку ${newSale.receiptNumber} (${data.comment.trim()})`
             : `Продажа по чеку ${newSale.receiptNumber}`,
-          createdAt: formattedSoldAt,
+          createdAt: newSale.soldAt,
           author: newSale.responsiblePerson,
           referenceId: newSale.id,
         };
@@ -796,9 +943,91 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'ADD_PRODUCT', payload: data });
   }, []);
 
-  const updateProduct = useCallback((id: string, data: ProductFormData) => {
-    dispatch({ type: 'UPDATE_PRODUCT', payload: { id, data } });
-  }, []);
+  const updateProduct = useCallback(
+    (
+      id: string,
+      data: ProductFormData
+    ): { success: boolean; error?: string; field?: 'stock' | 'purchasePrice' } => {
+      const oldProduct = state.products.find((p) => p.id === id);
+      if (!oldProduct) {
+        return { success: false, error: 'Товар не найден' };
+      }
+
+      const newPurchasePrice = Math.max(0, data.purchasePrice);
+      const isPriceChanged = Math.abs(oldProduct.purchasePrice - newPurchasePrice) > 0.001;
+
+      if (isPriceChanged) {
+        const now = Date.now();
+        const effectiveFrom = Math.floor(now / 1000) * 1000;
+        const nextPriceHistory = oldProduct.priceHistory ? [...oldProduct.priceHistory] : [];
+        const nextPriceEvent = nextPriceHistory.find((e) => e.effectiveFrom > effectiveFrom);
+        const nextPriceTime = nextPriceEvent ? nextPriceEvent.effectiveFrom : null;
+
+        const hasConflictingSale = state.sales.some((s) => {
+          const saleTime = getDocumentTimestamp(s.soldAt);
+          if (saleTime < effectiveFrom) return false;
+          if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
+          return s.items.some(
+            (si) => si.productId === oldProduct.id && Math.abs(si.purchasePriceSnapshot - newPurchasePrice) > 0.001
+          );
+        });
+        if (hasConflictingSale) {
+          return {
+            success: false,
+            error: `Нельзя изменить закупочную цену для «${oldProduct.name}»: в периоде действия новой цены уже проведены продажи с другой себестоимостью`,
+            field: 'purchasePrice',
+          };
+        }
+
+        const hasConflictingOutcome = state.outcomeDocuments.some((doc) => {
+          const docTime = getDocumentTimestamp(doc.documentDate);
+          if (docTime < effectiveFrom) return false;
+          if (nextPriceTime !== null && docTime >= nextPriceTime) return false;
+          return doc.items.some(
+            (oi) => oi.productId === oldProduct.id && Math.abs(oi.purchasePrice - newPurchasePrice) > 0.001
+          );
+        });
+        if (hasConflictingOutcome) {
+          return {
+            success: false,
+            error: `Нельзя изменить закупочную цену для «${oldProduct.name}»: в периоде действия новой цены уже проведены списания с другой себестоимостью`,
+            field: 'purchasePrice',
+          };
+        }
+      }
+
+      const cleanStock = Math.max(0, data.stock);
+      const quantityDelta = cleanStock - oldProduct.stock;
+
+      if (quantityDelta !== 0) {
+        const nowIso = new Date().toISOString();
+        const proposedMov: WarehouseMovement = {
+          id: 'temp-adj-check',
+          documentNumber: 'CHECK',
+          type: 'inventory_adjustment',
+          typeLabel: 'Корректировка остатка',
+          productId: oldProduct.id,
+          productName: oldProduct.name,
+          quantity: quantityDelta,
+          unit: oldProduct.unit,
+          reason: 'Проверка хронологии',
+          createdAt: nowIso,
+          author: '',
+        };
+        if (!validateMovementsChronology([proposedMov, ...state.movements])) {
+          return {
+            success: false,
+            error: 'Изменение остатка приведет к отрицательному остатку в истории движений склада',
+            field: 'stock',
+          };
+        }
+      }
+
+      dispatch({ type: 'UPDATE_PRODUCT', payload: { id, data } });
+      return { success: true };
+    },
+    [state.products, state.sales, state.outcomeDocuments, state.movements]
+  );
 
   const archiveProduct = useCallback(
     (id: string): { success: boolean; error?: string } => {
@@ -837,6 +1066,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         return { success: false, error: 'Добавьте хотя бы одну позицию' };
       }
 
+      // Compute exact document timestamp once for all checks and dispatch
+      const receiptTime = normalizeDocumentTimestamp(data.receivedAt);
+      const receivedAtIso = new Date(receiptTime).toISOString();
+
       const seenIds = new Set<string>();
       for (const item of data.items) {
         if (seenIds.has(item.productId)) {
@@ -871,11 +1104,53 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           };
         }
 
+        if (item.purchasePrice > target.sellingPrice) {
+          return {
+            success: false,
+            error: `Закупочная цена (${item.purchasePrice} сом) для «${target.name}» не может превышать цену продажи (${target.sellingPrice} сом)`,
+          };
+        }
+
         const newStock = target.stock + item.quantity;
         if (!Number.isSafeInteger(newStock) || newStock > 100_000_000) {
           return {
             success: false,
             error: `Итоговый остаток товара «${target.name}» превышает допустимый лимит (100 000 000 ${target.unit})`,
+          };
+        }
+
+        const nextPriceEvent = target.priceHistory?.find((e) => e.effectiveFrom > receiptTime);
+        const nextPriceTime = nextPriceEvent ? nextPriceEvent.effectiveFrom : null;
+
+        const hasConflictingSale = state.sales.some((s) => {
+          const saleTime = getDocumentTimestamp(s.soldAt);
+          if (saleTime < receiptTime) return false;
+          if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
+          return s.items.some(
+            (si) => si.productId === target.id && Math.abs(si.purchasePriceSnapshot - item.purchasePrice) > 0.001
+          );
+        });
+
+        if (hasConflictingSale) {
+          return {
+            success: false,
+            error: `Нельзя провести приход задним числом для «${target.name}» с ценой ${item.purchasePrice} сом: в этом периоде уже проведены продажи с другой себестоимостью`,
+          };
+        }
+
+        const hasConflictingOutcome = state.outcomeDocuments.some((doc) => {
+          const docTime = getDocumentTimestamp(doc.documentDate);
+          if (docTime < receiptTime) return false;
+          if (nextPriceTime !== null && docTime >= nextPriceTime) return false;
+          return doc.items.some(
+            (oi) => oi.productId === target.id && Math.abs(oi.purchasePrice - item.purchasePrice) > 0.001
+          );
+        });
+
+        if (hasConflictingOutcome) {
+          return {
+            success: false,
+            error: `Нельзя провести приход задним числом для «${target.name}» с ценой ${item.purchasePrice} сом: в этом периоде уже проведены списания с другой себестоимостью`,
           };
         }
       }
@@ -895,10 +1170,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         totalDocCents += lineCents;
       }
 
-      dispatch({ type: 'ADD_INCOME_RECEIPT', payload: data });
+      dispatch({ type: 'ADD_INCOME_RECEIPT', payload: { ...data, receivedAt: receivedAtIso } });
       return { success: true };
     },
-    [state.products]
+    [state.products, state.sales, state.outcomeDocuments]
   );
 
   const addOutcomeDocument = useCallback(
@@ -925,6 +1200,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       if (!data.items || data.items.length === 0) {
         return { success: false, error: 'Добавьте хотя бы одну позицию для списания' };
       }
+
+      // Compute exact document timestamp once for all checks and dispatch
+      const docTimestamp = normalizeDocumentTimestamp(data.documentDate);
+      const docDateIso = new Date(docTimestamp).toISOString();
 
       const seenIds = new Set<string>();
       for (const item of data.items) {
@@ -964,7 +1243,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       let totalDocCents = 0;
       for (const item of data.items) {
         const prod = state.products.find((p) => p.id === item.productId)!;
-        const lineCents = item.quantity * toCents(prod.purchasePrice);
+        const purchasePrice = getHistoricalPurchasePrice(prod, docTimestamp);
+        const lineCents = item.quantity * toCents(purchasePrice);
         if (
           !Number.isSafeInteger(lineCents) ||
           !Number.isSafeInteger(totalDocCents + lineCents)
@@ -979,7 +1259,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // Strict guard: verify chronological running balance with proposed outcome movements
-      const formattedDocDate = formatDateTime(data.documentDate);
       const proposedMovements: WarehouseMovement[] = data.items.map((it) => ({
         id: 'temp-check',
         documentNumber: 'CHECK',
@@ -990,7 +1269,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         quantity: -it.quantity,
         unit: 'шт.',
         reason: 'Проверка хронологии',
-        createdAt: formattedDocDate,
+        createdAt: docDateIso,
         author: '',
       }));
 
@@ -1002,7 +1281,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         };
       }
 
-      dispatch({ type: 'ADD_OUTCOME_DOCUMENT', payload: data });
+      dispatch({ type: 'ADD_OUTCOME_DOCUMENT', payload: { ...data, documentDate: docDateIso } });
       return { success: true };
     },
     [state.products, state.movements]
@@ -1036,6 +1315,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       if (!data.items || data.items.length === 0) {
         return { success: false, error: 'Добавьте хотя бы один товар в чек' };
       }
+
+      // Compute exact document timestamp once for all checks and dispatch
+      const soldAtTimestamp = normalizeDocumentTimestamp(data.soldAt);
+      const soldAtIso = new Date(soldAtTimestamp).toISOString();
 
       const seenIds = new Set<string>();
       let subtotalCents = 0;
@@ -1102,7 +1385,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         lineDiscountCents = Math.max(0, Math.min(lineGrossCents, lineDiscountCents));
         const lineFinalCents = lineGrossCents - lineDiscountCents;
 
-        const costPriceCents = toCents(prod.purchasePrice);
+        const costPrice = getHistoricalPurchasePrice(prod, soldAtTimestamp);
+        const costPriceCents = toCents(costPrice);
         const lineCostCents = item.quantity * costPriceCents;
         if (
           !Number.isSafeInteger(lineCostCents) ||
@@ -1212,7 +1496,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // Strict guard: verify chronological running balance with proposed sale movements
-      const formattedSoldAt = formatDateTime(data.soldAt);
       const proposedMovements: WarehouseMovement[] = data.items.map((it) => ({
         id: 'temp-check',
         documentNumber: 'CHECK',
@@ -1223,7 +1506,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         quantity: -it.quantity,
         unit: 'шт.',
         reason: 'Проверка хронологии',
-        createdAt: formattedSoldAt,
+        createdAt: soldAtIso,
         author: '',
       }));
 
@@ -1235,7 +1518,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         };
       }
 
-      dispatch({ type: 'ADD_SALE', payload: data });
+      dispatch({ type: 'ADD_SALE', payload: { ...data, soldAt: soldAtIso } });
       return { success: true };
     },
     [state.products, state.movements]

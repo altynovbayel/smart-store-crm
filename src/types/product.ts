@@ -20,6 +20,13 @@ export type ProductIconType =
 
 export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
 
+export interface ProductPriceHistoryEntry {
+  id?: number;
+  purchasePrice: number;
+  effectiveFrom: number;
+  createdAt: number;
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -36,6 +43,8 @@ export interface Product {
   unit: string;
   iconType: ProductIconType;
   isArchived: boolean;
+  priceUpdatedAt?: number;
+  priceHistory?: ProductPriceHistoryEntry[];
 }
 
 export type ProductSortField = 'name' | 'sellingPrice' | 'purchasePrice' | 'stock';

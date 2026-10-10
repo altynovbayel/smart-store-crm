@@ -264,18 +264,23 @@ export const IncomeFormModal = ({
         const p = Number(trimmedPrice);
         if (!Number.isFinite(p) || p < 0 || p > MAX_SAFE_PRICE) {
           newErrors[`item-${it.id}-price`] = `Строка ${rowNum}: цена от 0 до 10 000 000 сом`;
-        } else {
-          const q = Number(trimmedQty);
-          if (Number.isSafeInteger(q) && q > 0 && it.productId) {
-            const lineCents = q * toCents(p);
-            if (!Number.isSafeInteger(lineCents)) {
-              newErrors[`item-${it.id}-price`] = `Строка ${rowNum}: сумма строки превышает допустимый предел`;
-            } else {
-              validatedItems.push({
-                productId: it.productId,
-                quantity: q,
-                purchasePrice: p,
-              });
+        } else if (it.productId) {
+          const currentProd = activeProducts.find((prod) => prod.id === it.productId);
+          if (currentProd && p > currentProd.sellingPrice) {
+            newErrors[`item-${it.id}-price`] = `Строка ${rowNum}: закупочная цена (${p} сом) не может превышать цену продажи (${currentProd.sellingPrice} сом)`;
+          } else {
+            const q = Number(trimmedQty);
+            if (Number.isSafeInteger(q) && q > 0) {
+              const lineCents = q * toCents(p);
+              if (!Number.isSafeInteger(lineCents)) {
+                newErrors[`item-${it.id}-price`] = `Строка ${rowNum}: сумма строки превышает допустимый предел`;
+              } else {
+                validatedItems.push({
+                  productId: it.productId,
+                  quantity: q,
+                  purchasePrice: p,
+                });
+              }
             }
           }
         }
@@ -445,6 +450,7 @@ export const IncomeFormModal = ({
                 <input
                   id="inc-received-at"
                   type="datetime-local"
+                  step="1"
                   className={styles.input}
                   value={receivedAt}
                   onChange={(e) => setReceivedAt(e.target.value)}

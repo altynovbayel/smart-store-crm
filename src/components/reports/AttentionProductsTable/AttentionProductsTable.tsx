@@ -47,14 +47,14 @@ export const AttentionProductsTable = ({ items }: AttentionProductsTableProps) =
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id} className={styles.row}>
-                  <td className={styles.tdProduct}>
+                <tr key={item.id}>
+                  <td>
                     <div className={styles.productName} title={item.name}>
                       {item.name}
                     </div>
                     <div className={styles.productSku}>{item.sku}</div>
                   </td>
-                  <td className={styles.tdCategory}>
+                  <td>
                     <span className={styles.categoryBadge}>{item.categoryLabel}</span>
                   </td>
                   <td className={styles.tdStock}>
@@ -77,7 +77,7 @@ export const AttentionProductsTable = ({ items }: AttentionProductsTableProps) =
                   <td className={styles.tdValue}>
                     <span className={styles.valueText}>{formatCurrency(item.stockPurchaseValue)}</span>
                   </td>
-                  <td className={styles.tdStatus}>
+                  <td>
                     <span
                       className={`${styles.statusBadge} ${
                         item.status === 'out_of_stock'

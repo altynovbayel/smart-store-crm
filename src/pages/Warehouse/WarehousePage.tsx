@@ -148,9 +148,10 @@ export const WarehousePage = () => {
 
   const handleFormSubmit = (data: ProductFormData) => {
     if (productToEdit) {
-      updateProduct(productToEdit.id, data);
+      return updateProduct(productToEdit.id, data);
     } else {
       addProduct(data);
+      return { success: true };
     }
   };
 

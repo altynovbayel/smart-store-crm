@@ -112,7 +112,7 @@ export const RevenueReportChart = ({ data }: RevenueReportChartProps) => {
           {yTicks.map((tick, i) => {
             const y = getY(tick);
             return (
-              <g key={`y-grid-${i}`} className={styles.gridLineGroup}>
+              <g key={`y-grid-${i}`}>
                 <line
                   x1={padding.left}
                   y1={y}
@@ -194,7 +194,6 @@ export const RevenueReportChart = ({ data }: RevenueReportChartProps) => {
                   cy={p.y}
                   r={16}
                   fill="transparent"
-                  className={styles.hitArea}
                 />
                 {/* Visible inner point */}
                 <circle
@@ -211,7 +210,6 @@ export const RevenueReportChart = ({ data }: RevenueReportChartProps) => {
           {activePoint && (
             <g
               transform={`translate(${activePoint.x}, ${activePoint.y - 12})`}
-              className={styles.tooltipGroup}
               pointerEvents="none"
             >
               <rect

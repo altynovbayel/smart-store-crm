@@ -71,3 +71,27 @@ export const getIconTypeByCategory = (category: ProductCategory): ProductIconTyp
       return 'holder';
   }
 };
+
+/**
+ * Resolves the effective purchase price of a product at a specific historical timestamp.
+ */
+export const getHistoricalPurchasePrice = (
+  product: { purchasePrice: number; priceHistory?: Array<{ id?: number; purchasePrice: number; effectiveFrom: number; createdAt: number }> },
+  documentTimestampMs: number
+): number => {
+  const history = product.priceHistory;
+  if (!history || history.length === 0) {
+    return product.purchasePrice;
+  }
+  const eligible = history.filter((entry) => entry.effectiveFrom <= documentTimestampMs);
+  if (eligible.length === 0) {
+    const earliest = [...history].sort(
+      (a, b) => a.effectiveFrom - b.effectiveFrom || a.createdAt - b.createdAt || (a.id ?? 0) - (b.id ?? 0)
+    );
+    return earliest[0].purchasePrice;
+  }
+  const sorted = [...eligible].sort(
+    (a, b) => b.effectiveFrom - a.effectiveFrom || b.createdAt - a.createdAt || (b.id ?? 0) - (a.id ?? 0)
+  );
+  return sorted[0].purchasePrice;
+};

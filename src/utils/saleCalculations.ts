@@ -9,8 +9,9 @@ import type {
   SaleValidationResult,
   BarcodeScanResult,
 } from '../types';
-import { parseCustomDate } from './dateUtils';
+import { parseCustomDate, normalizeDocumentTimestamp } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
+import { getHistoricalPurchasePrice } from './productUtils';
 
 export const MAX_SAFE_PRICE = 100_000_000;
 
@@ -141,7 +142,8 @@ export const calculateSaleTotals = (
   receiptDiscountType: DiscountType,
   rawReceiptDiscountValue: string,
   paymentMethod: PaymentMethod,
-  rawReceivedAmount: string
+  rawReceivedAmount: string,
+  soldAt?: string
 ): SaleTotals => {
   let totalUnits = 0;
   let subtotalCents = 0;
@@ -150,9 +152,11 @@ export const calculateSaleTotals = (
   let costCents = 0;
   let isOverflow = false;
 
+  const soldAtTimestamp = normalizeDocumentTimestamp(soldAt);
+
   for (const it of items) {
     const prod = activeProducts.find((p) => p.id === it.productId);
-    const costPrice = prod ? prod.purchasePrice : 0;
+    const costPrice = prod ? getHistoricalPurchasePrice(prod, soldAtTimestamp) : 0;
     const itemCalc = calculateSaleItemSubtotals(
       it.rawQuantity,
       it.rawUnitPrice,
@@ -378,7 +382,9 @@ export const validateSaleForm = (
       return;
     }
 
-    const costPriceCents = toCents(product.purchasePrice);
+    const soldAtTimestamp = normalizeDocumentTimestamp(soldAt);
+    const costPrice = getHistoricalPurchasePrice(product, soldAtTimestamp);
+    const costPriceCents = toCents(costPrice);
     const lineCostCents = qty * costPriceCents;
     if (
       !Number.isSafeInteger(lineCostCents) ||
@@ -469,11 +475,13 @@ export const validateSaleForm = (
     return { isValid: false, errors };
   }
 
+  const resolvedSoldAt = new Date(normalizeDocumentTimestamp(soldAt)).toISOString();
+
   return {
     isValid: true,
     errors: {},
     data: {
-      soldAt,
+      soldAt: resolvedSoldAt,
       paymentMethod,
       receivedAmount: validatedReceivedAmount,
       responsiblePerson: responsiblePerson.trim(),

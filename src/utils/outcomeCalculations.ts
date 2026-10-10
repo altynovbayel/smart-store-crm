@@ -4,8 +4,9 @@ import type {
   OutcomeReason,
   Product,
 } from '../types';
-import { parseCustomDate } from './dateUtils';
+import { parseCustomDate, normalizeDocumentTimestamp } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
+import { getHistoricalPurchasePrice } from './productUtils';
 
 /**
  * Utility functions for outcome (write-off) calculations and form validations.
@@ -40,18 +41,22 @@ export interface OutcomeTotals {
 
 export const calculateOutcomeTotals = (
   items: OutcomeFormItemState[],
-  activeProducts: Product[]
+  activeProducts: Product[],
+  documentDate?: string
 ): OutcomeTotals => {
   let totalUnits = 0;
   let totalCents = 0;
   let isOverflow = false;
+
+  const docTimestamp = normalizeDocumentTimestamp(documentDate);
 
   for (const it of items) {
     const q = parseOutcomeQuantity(it.rawQuantity);
     const product = activeProducts.find((p) => p.id === it.productId);
     if (q !== null && product) {
       totalUnits += q;
-      const lineCents = q * toCents(product.purchasePrice);
+      const purchasePrice = getHistoricalPurchasePrice(product, docTimestamp);
+      const lineCents = q * toCents(purchasePrice);
       if (
         !Number.isSafeInteger(lineCents) ||
         !Number.isSafeInteger(totalCents + lineCents)
@@ -165,7 +170,9 @@ export const validateOutcomeForm = (
       return;
     }
 
-    const lineCents = q * toCents(product.purchasePrice);
+    const docTimestamp = normalizeDocumentTimestamp(documentDate);
+    const purchasePrice = getHistoricalPurchasePrice(product, docTimestamp);
+    const lineCents = q * toCents(purchasePrice);
     if (
       !Number.isSafeInteger(lineCents) ||
       !Number.isSafeInteger(docTotalCents + lineCents)
@@ -187,12 +194,14 @@ export const validateOutcomeForm = (
     return { isValid: false, errors };
   }
 
+  const resolvedDate = new Date(normalizeDocumentTimestamp(documentDate)).toISOString();
+
   return {
     isValid: true,
     errors: {},
     data: {
       reason,
-      documentDate,
+      documentDate: resolvedDate,
       responsiblePerson: responsiblePerson.trim(),
       comment: comment.trim() || undefined,
       items: validatedItems,

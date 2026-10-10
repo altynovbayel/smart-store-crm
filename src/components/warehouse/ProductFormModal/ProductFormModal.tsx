@@ -9,7 +9,9 @@ export interface ProductFormModalProps {
   productToEdit?: Product | null;
   existingProducts: Product[];
   onClose: () => void;
-  onSubmit: (data: ProductFormData) => void;
+  onSubmit: (
+    data: ProductFormData
+  ) => { success: boolean; error?: string; field?: 'stock' | 'purchasePrice' } | void;
 }
 
 interface ProductFormRawState {
@@ -256,7 +258,22 @@ export const ProductFormModal = ({
     e.preventDefault();
     const result = validate();
     if (result.isValid && result.data) {
-      onSubmit(result.data);
+      const res = onSubmit(result.data);
+      if (res && !res.success) {
+        const err = res.error || 'Ошибка при сохранении товара';
+        const fieldKey = res.field || (/остат|движени/i.test(err) ? 'stock' : 'purchasePrice');
+        setErrors((prev) => ({
+          ...prev,
+          [fieldKey]: err,
+        }));
+        requestAnimationFrame(() => {
+          const targetField = modalRef.current?.querySelector<HTMLElement>(
+            fieldKey === 'stock' ? '#prod-stock' : '#prod-purchase'
+          );
+          targetField?.focus();
+        });
+        return;
+      }
       onClose();
     } else {
       requestAnimationFrame(() => {

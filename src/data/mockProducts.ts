@@ -1,5 +1,7 @@
 import type { Product } from '../types';
 import { calculateStockStatus } from '../utils/productUtils';
+import { initialIncomeReceipts } from './mockIncome';
+import { getDocumentTimestamp } from '../utils/dateUtils';
 
 const rawProducts = [
   {
@@ -274,9 +276,29 @@ const rawProducts = [
   },
 ];
 
-// Automatically calculate initial statuses
-export const initialWarehouseProducts: Product[] = rawProducts.map((p) => ({
-  ...p,
-  isArchived: false,
-  status: calculateStockStatus(p.stock, p.minStockThreshold),
-}));
+// Automatically calculate initial statuses and seed priceHistory from initial income receipts
+export const initialWarehouseProducts: Product[] = rawProducts.map((p) => {
+  const rawHistory = [
+    { purchasePrice: p.purchasePrice, effectiveFrom: 0, createdAt: 0 },
+    ...initialIncomeReceipts.flatMap((doc) =>
+      doc.items
+        .filter((i) => i.productId === p.id)
+        .map((i) => ({
+          purchasePrice: i.purchasePrice,
+          effectiveFrom: getDocumentTimestamp(doc.receivedAt),
+          createdAt: getDocumentTimestamp(doc.createdAt),
+        }))
+    ),
+  ];
+
+  const history = rawHistory
+    .map((entry, idx) => ({ id: idx + 1, ...entry }))
+    .sort((a, b) => a.effectiveFrom - b.effectiveFrom || a.createdAt - b.createdAt || a.id - b.id);
+
+  return {
+    ...p,
+    isArchived: false,
+    status: calculateStockStatus(p.stock, p.minStockThreshold),
+    priceHistory: history,
+  };
+});

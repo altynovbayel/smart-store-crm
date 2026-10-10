@@ -30,8 +30,8 @@ export const CategoryStockReport = ({ items }: CategoryStockReportProps) => {
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.category} className={styles.row}>
-                <td className={styles.tdCategory}>
+              <tr key={item.category}>
+                <td>
                   <span className={styles.categoryName}>{item.categoryLabel}</span>
                 </td>
                 <td className={styles.tdCount}>

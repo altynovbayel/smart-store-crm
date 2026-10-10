@@ -37,7 +37,7 @@ export const PopularProductsReport = ({ items }: PopularProductsReportProps) => 
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.productId} className={styles.row}>
+                <tr key={item.productId}>
                   <td className={styles.tdRank}>
                     <span
                       className={`${styles.rankBadge} ${
@@ -53,7 +53,7 @@ export const PopularProductsReport = ({ items }: PopularProductsReportProps) => 
                       {item.rank}
                     </span>
                   </td>
-                  <td className={styles.tdProduct}>
+                  <td>
                     <div className={styles.productName} title={item.productName}>
                       {item.productName}
                     </div>
@@ -69,7 +69,7 @@ export const PopularProductsReport = ({ items }: PopularProductsReportProps) => 
                       {formatCurrency(item.revenue)}
                     </span>
                   </td>
-                  <td className={styles.tdShare}>
+                  <td>
                     <div className={styles.shareGroup}>
                       <span className={styles.shareValue}>
                         {item.revenueShare.toFixed(1)}%

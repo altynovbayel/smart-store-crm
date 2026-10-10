@@ -200,7 +200,7 @@ export const OutcomeFormModal = ({
   };
 
   // Computed live totals for preview
-  const liveTotals = calculateOutcomeTotals(items, activeProducts);
+  const liveTotals = calculateOutcomeTotals(items, activeProducts, documentDate);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -325,6 +325,7 @@ export const OutcomeFormModal = ({
                 <input
                   id="out-date"
                   type="datetime-local"
+                  step="1"
                   className={styles.input}
                   value={documentDate}
                   onChange={(e) => setDocumentDate(e.target.value)}
@@ -418,6 +419,7 @@ export const OutcomeFormModal = ({
                       key={item.id}
                       index={idx}
                       item={item}
+                      documentDate={documentDate}
                       activeProducts={activeProducts}
                       selectedProduct={selectedProduct}
                       allItems={items}

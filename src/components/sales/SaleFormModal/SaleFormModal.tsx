@@ -147,7 +147,8 @@ export const SaleFormModal = ({
     receiptDiscountType,
     rawReceiptDiscountValue,
     paymentMethod,
-    rawReceivedAmount
+    rawReceivedAmount,
+    soldAt
   );
 
   // Barcode scanner handling
@@ -394,6 +395,7 @@ export const SaleFormModal = ({
                 <input
                   id="sale-sold-at"
                   type="datetime-local"
+                  step="1"
                   className={styles.input}
                   value={soldAt}
                   onChange={(e) => setSoldAt(e.target.value)}
@@ -524,6 +526,7 @@ export const SaleFormModal = ({
                       key={item.id}
                       index={index}
                       item={item}
+                      soldAt={soldAt}
                       activeProducts={activeProducts}
                       selectedProduct={selProd}
                       allItems={items}

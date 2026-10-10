@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { X, ArrowDownRight, ArrowUpRight, History, PackageX } from 'lucide-react';
 import type { Product, WarehouseMovement } from '../../../types';
 import { restoreFocusWithFallback } from '../../../utils/focusUtils';
+import { formatDateTime } from '../../../utils/dateUtils';
 import styles from './ProductMovementsModal.module.scss';
 
 export interface ProductMovementsModalProps {
@@ -153,7 +154,7 @@ export const ProductMovementsModal = ({
                       <div className={styles.movTopRow}>
                         <strong className={styles.movDoc}>{mov.documentNumber}</strong>
                         <span className={styles.movTypeBadge}>{mov.typeLabel}</span>
-                        <time className={styles.movTime}>{mov.createdAt}</time>
+                        <time className={styles.movTime}>{formatDateTime(mov.createdAt)}</time>
                       </div>
                       {mov.reason && <p className={styles.movReason}>{mov.reason}</p>}
                       <span className={styles.movAuthor}>Ответственный: {mov.author}</span>
