@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Home,
   ShoppingCart,
@@ -12,19 +12,22 @@ import {
   LogOut,
   X,
 } from 'lucide-react';
+import type { AppRole } from '../../../types';
+import { useAuth } from '../../../context';
 import styles from './Sidebar.module.scss';
 
 export interface NavItem {
   to: string;
   label: string;
   icon: typeof Home;
+  roles?: AppRole[];
 }
 
 const navItems: NavItem[] = [
   { to: '/', label: 'Главная', icon: Home },
   { to: '/sales', label: 'Продажи', icon: ShoppingCart },
-  { to: '/income', label: 'Приход', icon: ArrowDownToLine },
-  { to: '/outcome', label: 'Расход', icon: ArrowUpFromLine },
+  { to: '/income', label: 'Приход', icon: ArrowDownToLine, roles: ['admin'] },
+  { to: '/outcome', label: 'Расход', icon: ArrowUpFromLine, roles: ['admin'] },
   { to: '/warehouse', label: 'Склад', icon: Package },
   { to: '/sales-history', label: 'История продаж', icon: Clock },
   { to: '/reports', label: 'Отчёты', icon: BarChart3 },
@@ -36,8 +39,28 @@ export interface SidebarProps {
 }
 
 export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
+  const navigate = useNavigate();
+  const { profile, signOut } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const roleLabel = profile?.role === 'admin' ? 'Администратор' : 'Кассир';
+  const displayName = profile?.full_name?.trim() || 'Сотрудник';
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await signOut();
+      navigate('/login', { replace: true });
+    } catch {
+      navigate('/login', { replace: true });
+    } finally {
+      setIsLoggingOut(false);
+      onClose();
+    }
+  };
 
   // Track viewport mode reactively on resize
   const [isMobile, setIsMobile] = useState<boolean>(() => {
@@ -215,24 +238,26 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         {/* Navigation Menu */}
         <nav className={styles.navigation} aria-label="Основная навигация">
           <ul className={styles.navList}>
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <li key={item.to} className={styles.navItem}>
-                  <NavLink
-                    to={item.to}
-                    end={item.to === '/'}
-                    className={({ isActive }) =>
-                      `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
-                    }
-                    onClick={handleLinkClick}
-                  >
-                    <Icon size={18} className={styles.navIcon} aria-hidden="true" />
-                    <span className={styles.navLabel}>{item.label}</span>
-                  </NavLink>
-                </li>
-              );
-            })}
+            {navItems
+              .filter((item) => !item.roles || (profile && item.roles.includes(profile.role)))
+              .map((item) => {
+                const Icon = item.icon;
+                return (
+                  <li key={item.to} className={styles.navItem}>
+                    <NavLink
+                      to={item.to}
+                      end={item.to === '/'}
+                      className={({ isActive }) =>
+                        `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`
+                      }
+                      onClick={handleLinkClick}
+                    >
+                      <Icon size={18} className={styles.navIcon} aria-hidden="true" />
+                      <span className={styles.navLabel}>{item.label}</span>
+                    </NavLink>
+                  </li>
+                );
+              })}
           </ul>
         </nav>
 
@@ -243,8 +268,8 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
               <Settings size={18} className={styles.gearIcon} />
             </div>
             <div className={styles.userMeta}>
-              <span className={styles.userName}>Администратор</span>
-              <span className={styles.userRole}>Полный доступ</span>
+              <span className={styles.userName}>{displayName}</span>
+              <span className={styles.userRole}>{roleLabel}</span>
             </div>
           </div>
           <button
@@ -252,9 +277,8 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
             className={styles.logoutButton}
             title="Выйти из системы"
             aria-label="Выйти из системы"
-            onClick={() => {
-              alert('Выход из системы (в этапе 1 действие не активно)');
-            }}
+            disabled={isLoggingOut}
+            onClick={handleLogout}
           >
             <LogOut size={16} />
           </button>

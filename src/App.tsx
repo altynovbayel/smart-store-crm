@@ -1,12 +1,14 @@
-  import { RouterProvider } from 'react-router-dom';
+import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
-import { InventoryProvider } from './context';
+import { AuthProvider, InventoryProvider } from './context';
 
 export function App() {
   return (
-    <InventoryProvider>
-      <RouterProvider router={router} />
-    </InventoryProvider>
+    <AuthProvider>
+      <InventoryProvider>
+        <RouterProvider router={router} />
+      </InventoryProvider>
+    </AuthProvider>
   );
 }
 

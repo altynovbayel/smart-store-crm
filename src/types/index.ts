@@ -6,3 +6,5 @@ export type * from './income';
 export * from './outcome';
 export * from './salesHistory';
 export * from './reports';
+export type * from './auth';
+export type * from './database.types';

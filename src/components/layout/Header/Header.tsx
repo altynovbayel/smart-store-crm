@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu, Search, Bell, ChevronDown } from 'lucide-react';
+import { Menu, Search, Bell } from 'lucide-react';
+import { useAuth } from '../../../context';
 import styles from './Header.module.scss';
 
 export interface HeaderProps {
@@ -19,8 +20,13 @@ const pageTitles: Record<string, string> = {
 
 export const Header = ({ onOpenMobileMenu }: HeaderProps) => {
   const location = useLocation();
+  const { profile } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [hasUnreadNotifications] = useState(true);
+
+  const roleLabel = profile?.role === 'admin' ? 'Администратор' : 'Кассир';
+  const displayName = profile?.full_name?.trim() || 'Сотрудник';
+  const avatarInitial = (displayName.charAt(0) || 'S').toUpperCase();
 
   const currentTitle = pageTitles[location.pathname] || 'Smart Store';
 
@@ -96,18 +102,20 @@ export const Header = ({ onOpenMobileMenu }: HeaderProps) => {
           )}
         </button>
 
-        {/* User Account / Avatar Dropdown */}
-        <button
-          type="button"
-          className={styles.userDropdownButton}
-          aria-label="Профиль пользователя"
-          onClick={() => alert('Меню профиля (Администратор)')}
+        {/* User Account / Avatar Profile Info */}
+        <div
+          className={styles.userProfileInfo}
+          aria-label={`Текущий пользователь: ${displayName} (${roleLabel})`}
+          title={`${displayName} (${roleLabel})`}
         >
           <div className={styles.avatarCircle} aria-hidden="true">
-            <span>A</span>
+            <span>{avatarInitial}</span>
           </div>
-          <ChevronDown size={14} className={styles.chevronIcon} aria-hidden="true" />
-        </button>
+          <div className={styles.userMeta}>
+            <span className={styles.userName}>{displayName}</span>
+            <span className={styles.userRole}>{roleLabel}</span>
+          </div>
+        </div>
       </div>
     </header>
   );

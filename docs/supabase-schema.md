@@ -49,6 +49,8 @@
 - `created_at` (timestamptz, default `now()`)
 - `updated_at` (timestamptz, default `now()`)
 
+> **Supabase Realtime:** Таблица `public.profiles` включена в публикацию `supabase_realtime` (`enable_profiles_realtime`). Это позволяет фронтенд-провайдеру авторизации (`AuthProvider`) мгновенно и без поллинга реагировать на изменение прав сотрудника: оперативное переключение роли (`admin` ↔ `cashier`) или блокировку аккаунта (`is_active = false`) с немедленным завершением сессии.
+
 ### 3.2. `public.products` (Каталог товаров)
 - `id` (uuid, PK, default `gen_random_uuid()`)
 - `sku` (text, not null, unique case-insensitive)

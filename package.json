@@ -12,6 +12,7 @@
     "verify": "npm run build && npm run lint && npm run review:codex"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
     "lucide-react": "^1.48.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

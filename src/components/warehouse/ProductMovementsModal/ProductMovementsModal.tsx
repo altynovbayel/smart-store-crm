@@ -51,6 +51,13 @@ export const ProductMovementsModal = ({
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
+        // If focus escaped the dialog container, pull it back in
+        if (!modalRef.current.contains(document.activeElement)) {
+          e.preventDefault();
+          first.focus();
+          return;
+        }
+
         if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
           last.focus();

@@ -68,5 +68,15 @@ export const restoreFocusWithFallback = (
   }
 
   const fallbackBtn = getVisibleAddButton(fallbackSelector);
-  fallbackBtn?.focus();
+  if (fallbackBtn) {
+    fallbackBtn.focus();
+    return;
+  }
+
+  // If no action button is found (e.g. role changed to cashier), fall back to first visible search input
+  const searchInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="search"]'));
+  const visibleSearch = searchInputs.find(isElementVisible);
+  if (visibleSearch) {
+    visibleSearch.focus();
+  }
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpDown,
@@ -30,6 +30,7 @@ export interface ProductsTableProps {
   onViewMovements: (product: Product) => void;
   onArchiveProduct: (product: Product) => void;
   onResetFilters: () => void;
+  canManageProducts?: boolean;
 }
 
 interface MenuCoords {
@@ -45,20 +46,21 @@ export const ProductsTable = ({
   onViewMovements,
   onArchiveProduct,
   onResetFilters,
+  canManageProducts = true,
 }: ProductsTableProps) => {
   const [activeMenuProduct, setActiveMenuProduct] = useState<Product | null>(null);
   const [menuCoords, setMenuCoords] = useState<MenuCoords | null>(null);
   const activeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const closeMenu = (restoreFocus = true) => {
+  const closeMenu = useCallback((restoreFocus = true) => {
     const trigger = activeTriggerRef.current;
     setActiveMenuProduct(null);
     setMenuCoords(null);
     if (restoreFocus && trigger && document.contains(trigger) && isElementVisible(trigger)) {
       trigger.focus();
     }
-  };
+  }, []);
 
   // Focus first menu item when menu opens
   useEffect(() => {
@@ -76,6 +78,19 @@ export const ProductsTable = ({
 
     return () => cancelAnimationFrame(rafId);
   }, [activeMenuProduct]);
+
+  // Close menu and restore focus if permissions change while menu is open
+  const prevCanManageRef = useRef(canManageProducts);
+  useEffect(() => {
+    if (prevCanManageRef.current !== canManageProducts) {
+      prevCanManageRef.current = canManageProducts;
+      if (activeMenuProduct) {
+        requestAnimationFrame(() => {
+          closeMenu(true);
+        });
+      }
+    }
+  }, [canManageProducts, activeMenuProduct, closeMenu]);
 
   // Accessible keyboard navigation for the menu
   const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -156,7 +171,7 @@ export const ProductsTable = ({
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeMenuProduct]);
+  }, [activeMenuProduct, closeMenu]);
 
   const handleToggleMenu = (
     e: React.MouseEvent<HTMLButtonElement>,
@@ -172,7 +187,7 @@ export const ProductsTable = ({
 
     const rect = trigger.getBoundingClientRect();
     const menuWidth = 196;
-    const menuHeight = 126;
+    const menuHeight = canManageProducts ? 126 : 46;
 
     // Determine vertical placement: open upwards if space below is limited
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -224,10 +239,10 @@ export const ProductsTable = ({
   const handleEmptyReset = () => {
     onResetFilters();
     requestAnimationFrame(() => {
-      const searchInput = document.querySelector<HTMLInputElement>(
-        'input[type="search"]'
-      );
-      if (searchInput && document.contains(searchInput)) {
+      const searchInput =
+        document.querySelector<HTMLInputElement>('[data-warehouse-search]') ??
+        document.querySelector<HTMLInputElement>('input[type="search"]');
+      if (searchInput && document.contains(searchInput) && isElementVisible(searchInput)) {
         searchInput.focus();
       }
     });
@@ -415,19 +430,21 @@ export const ProductsTable = ({
             tabIndex={-1}
             onKeyDown={handleMenuKeyDown}
           >
-            <button
-              type="button"
-              className={styles.menuItem}
-              role="menuitem"
-              onClick={() => {
-                const prod = activeMenuProduct;
-                closeMenu(true);
-                onEditProduct(prod);
-              }}
-            >
-              <Edit2 size={14} className={styles.menuIcon} />
-              <span>Редактировать</span>
-            </button>
+            {canManageProducts && (
+              <button
+                type="button"
+                className={styles.menuItem}
+                role="menuitem"
+                onClick={() => {
+                  const prod = activeMenuProduct;
+                  closeMenu(true);
+                  onEditProduct(prod);
+                }}
+              >
+                <Edit2 size={14} className={styles.menuIcon} />
+                <span>Редактировать</span>
+              </button>
+            )}
             <button
               type="button"
               className={styles.menuItem}
@@ -441,20 +458,24 @@ export const ProductsTable = ({
               <History size={14} className={styles.menuIcon} />
               <span>Посмотреть движения</span>
             </button>
-            <div className={styles.menuDivider} />
-            <button
-              type="button"
-              className={`${styles.menuItem} ${styles.menuItemArchive}`}
-              role="menuitem"
-              onClick={() => {
-                const prod = activeMenuProduct;
-                closeMenu(true);
-                onArchiveProduct(prod);
-              }}
-            >
-              <Archive size={14} className={styles.menuIcon} />
-              <span>Архивировать</span>
-            </button>
+            {canManageProducts && (
+              <>
+                <div className={styles.menuDivider} />
+                <button
+                  type="button"
+                  className={`${styles.menuItem} ${styles.menuItemArchive}`}
+                  role="menuitem"
+                  onClick={() => {
+                    const prod = activeMenuProduct;
+                    closeMenu(true);
+                    onArchiveProduct(prod);
+                  }}
+                >
+                  <Archive size={14} className={styles.menuIcon} />
+                  <span>Архивировать</span>
+                </button>
+              </>
+            )}
           </div>,
           document.body
         )}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import type {
   Product,
@@ -8,7 +8,7 @@ import type {
   ProductFormData,
 } from '../../types';
 import { exportProductsToCSV } from '../../utils/csvUtils';
-import { useInventory } from '../../context';
+import { useInventory, useAuth } from '../../context';
 import { WarehouseStats } from '../../components/warehouse/WarehouseStats/WarehouseStats';
 import { WarehouseToolbar } from '../../components/warehouse/WarehouseToolbar/WarehouseToolbar';
 import { ProductsTable } from '../../components/warehouse/ProductsTable/ProductsTable';
@@ -19,6 +19,7 @@ import { ProductMovementsModal } from '../../components/warehouse/ProductMovemen
 import styles from './WarehousePage.module.scss';
 
 export const WarehousePage = () => {
+  const { isAdmin } = useAuth();
   const {
     products,
     activeProducts,
@@ -45,6 +46,24 @@ export const WarehousePage = () => {
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [productToArchive, setProductToArchive] = useState<Product | null>(null);
   const [productForMovements, setProductForMovements] = useState<Product | null>(null);
+
+  // Reset admin-only modal states immediately when isAdmin permission is lost
+  const [prevIsAdmin, setPrevIsAdmin] = useState(isAdmin);
+  if (prevIsAdmin !== isAdmin) {
+    setPrevIsAdmin(isAdmin);
+    if (!isAdmin) {
+      if (isFormModalOpen) {
+        setIsFormModalOpen(false);
+        setProductToEdit(null);
+      }
+      if (productToArchive) {
+        setProductToArchive(null);
+      }
+    }
+  }
+
+  const effectiveFormModalOpen = isAdmin && isFormModalOpen;
+  const effectiveProductToArchive = isAdmin ? productToArchive : null;
 
   // Stats calculation
   const stats = useMemo(() => {
@@ -137,16 +156,21 @@ export const WarehousePage = () => {
   };
 
   const handleOpenAddModal = () => {
+    if (!isAdmin) return;
     setProductToEdit(null);
     setIsFormModalOpen(true);
   };
 
   const handleOpenEditModal = (product: Product) => {
+    if (!isAdmin) return;
     setProductToEdit(product);
     setIsFormModalOpen(true);
   };
 
   const handleFormSubmit = (data: ProductFormData) => {
+    if (!isAdmin) {
+      return { success: false, error: 'Недостаточно прав для выполнения операции' };
+    }
     if (productToEdit) {
       return updateProduct(productToEdit.id, data);
     } else {
@@ -155,7 +179,21 @@ export const WarehousePage = () => {
     }
   };
 
+  const handleCloseFormModal = useCallback(() => {
+    setIsFormModalOpen(false);
+    setProductToEdit(null);
+  }, []);
+
+  const handleCloseArchiveModal = useCallback(() => {
+    setProductToArchive(null);
+  }, []);
+
+  const handleCloseMovementsModal = useCallback(() => {
+    setProductForMovements(null);
+  }, []);
+
   const handleArchiveConfirm = (product: Product) => {
+    if (!isAdmin) return;
     archiveProduct(product.id);
   };
 
@@ -172,15 +210,17 @@ export const WarehousePage = () => {
           <p className={styles.subtitle}>Управление товарами и остатками</p>
         </div>
 
-        <button
-          type="button"
-          data-add-product-btn
-          className={styles.addBtnHeader}
-          onClick={handleOpenAddModal}
-        >
-          <Plus size={16} />
-          <span>Добавить товар</span>
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            data-add-product-btn
+            className={styles.addBtnHeader}
+            onClick={handleOpenAddModal}
+          >
+            <Plus size={16} />
+            <span>Добавить товар</span>
+          </button>
+        )}
       </header>
 
       {/* 4 Stat Cards */}
@@ -201,6 +241,7 @@ export const WarehousePage = () => {
         onResetFilters={handleResetFilters}
         onExport={handleExportCSV}
         onAddProduct={handleOpenAddModal}
+        canAddProduct={isAdmin}
       />
 
       {/* Products Table */}
@@ -212,6 +253,7 @@ export const WarehousePage = () => {
         onViewMovements={(prod) => setProductForMovements(prod)}
         onArchiveProduct={(prod) => setProductToArchive(prod)}
         onResetFilters={handleResetFilters}
+        canManageProducts={isAdmin}
       />
 
       {/* Pagination */}
@@ -224,25 +266,22 @@ export const WarehousePage = () => {
       />
 
       {/* Add / Edit Product Modal */}
-      {isFormModalOpen && (
+      {effectiveFormModalOpen && (
         <ProductFormModal
           key={productToEdit?.id ?? 'new-product'}
-          isOpen={isFormModalOpen}
+          isOpen={effectiveFormModalOpen}
           productToEdit={productToEdit}
           existingProducts={products}
-          onClose={() => {
-            setIsFormModalOpen(false);
-            setProductToEdit(null);
-          }}
+          onClose={handleCloseFormModal}
           onSubmit={handleFormSubmit}
         />
       )}
 
       {/* Archive Product Confirmation Modal */}
       <ArchiveProductModal
-        isOpen={Boolean(productToArchive)}
-        product={productToArchive}
-        onClose={() => setProductToArchive(null)}
+        isOpen={Boolean(effectiveProductToArchive)}
+        product={effectiveProductToArchive}
+        onClose={handleCloseArchiveModal}
         onConfirm={handleArchiveConfirm}
       />
 
@@ -251,7 +290,7 @@ export const WarehousePage = () => {
         isOpen={Boolean(productForMovements)}
         product={productForMovements}
         movements={productForMovements ? getProductMovements(productForMovements.id) : []}
-        onClose={() => setProductForMovements(null)}
+        onClose={handleCloseMovementsModal}
       />
     </div>
   );

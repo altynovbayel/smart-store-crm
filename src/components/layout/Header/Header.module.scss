@@ -192,22 +192,13 @@
   border: 1.5px solid $color-surface;
 }
 
-.userDropdownButton {
-  @include button-reset;
+.userProfileInfo {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 3px 6px 3px 3px;
   border-radius: $radius-full;
-  transition: background-color $transition-fast;
-
-  &:hover {
-    background-color: $color-surface-hover;
-  }
-
-  &:focus-visible {
-    @include focus-ring;
-  }
+  user-select: none;
 }
 
 .avatarCircle {
@@ -224,6 +215,24 @@
   user-select: none;
 }
 
-.chevronIcon {
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  line-height: 1.2;
+
+  @include custom-screen(640px) {
+    display: none;
+  }
+}
+
+.userName {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-primary;
+}
+
+.userRole {
+  font-size: $font-size-xs;
   color: $color-text-secondary;
 }

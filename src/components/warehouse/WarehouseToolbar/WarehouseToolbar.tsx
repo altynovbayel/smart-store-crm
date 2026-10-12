@@ -16,6 +16,7 @@ export interface WarehouseToolbarProps {
   onResetFilters: () => void;
   onExport: () => void;
   onAddProduct: () => void;
+  canAddProduct?: boolean;
 }
 
 export const WarehouseToolbar = ({
@@ -24,6 +25,7 @@ export const WarehouseToolbar = ({
   onResetFilters,
   onExport,
   onAddProduct,
+  canAddProduct = true,
 }: WarehouseToolbarProps) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +77,7 @@ export const WarehouseToolbar = ({
           <input
             ref={searchInputRef}
             type="search"
+            data-warehouse-search
             className={styles.searchInput}
             placeholder="Поиск по названию, артикулу или штрихкоду"
             value={filters.searchQuery}
@@ -167,16 +170,18 @@ export const WarehouseToolbar = ({
         </button>
 
         {/* Add Product button */}
-        <button
-          type="button"
-          data-add-product-btn
-          className={styles.primaryButton}
-          onClick={onAddProduct}
-          title="Добавить новый товар"
-        >
-          <Plus size={16} />
-          <span>Добавить товар</span>
-        </button>
+        {canAddProduct && (
+          <button
+            type="button"
+            data-add-product-btn
+            className={styles.primaryButton}
+            onClick={onAddProduct}
+            title="Добавить новый товар"
+          >
+            <Plus size={16} />
+            <span>Добавить товар</span>
+          </button>
+        )}
       </div>
     </div>
   );

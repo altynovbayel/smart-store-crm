@@ -1,5 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { MainLayout } from '../components/layout/MainLayout/MainLayout';
+import { ProtectedRoute } from '../components/common/ProtectedRoute/ProtectedRoute';
+import { LoginPage } from '../pages/Login/LoginPage';
 import { DashboardPage } from '../pages/Dashboard/DashboardPage';
 import { SalesPage } from '../pages/Sales/SalesPage';
 import { IncomePage } from '../pages/Income/IncomePage';
@@ -10,8 +12,16 @@ import { ReportsPage } from '../pages/Reports/ReportsPage';
 
 export const router = createBrowserRouter([
   {
+    path: '/login',
+    element: <LoginPage />,
+  },
+  {
     path: '/',
-    element: <MainLayout />,
+    element: (
+      <ProtectedRoute>
+        <MainLayout />
+      </ProtectedRoute>
+    ),
     children: [
       {
         index: true,
@@ -23,11 +33,19 @@ export const router = createBrowserRouter([
       },
       {
         path: 'income',
-        element: <IncomePage />,
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <IncomePage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'outcome',
-        element: <OutcomePage />,
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <OutcomePage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'warehouse',
@@ -46,5 +64,9 @@ export const router = createBrowserRouter([
         element: <Navigate to="/" replace />,
       },
     ],
+  },
+  {
+    path: '*',
+    element: <Navigate to="/" replace />,
   },
 ]);

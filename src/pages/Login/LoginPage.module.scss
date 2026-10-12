@@ -1,0 +1,250 @@
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.loginContainer {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: $color-background;
+  padding: $spacing-md;
+  box-sizing: border-box;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-dropdown;
+  padding: $spacing-2xl $spacing-xl;
+  box-sizing: border-box;
+
+  @include mobile {
+    padding: $spacing-xl $spacing-md;
+    border-radius: $radius-lg;
+  }
+}
+
+.brandHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: $spacing-xl;
+}
+
+.logoBadge {
+  width: 48px;
+  height: 48px;
+  border-radius: $radius-lg;
+  background-color: $color-primary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $spacing-md;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+
+.logoLetter {
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: $font-weight-bold;
+  line-height: 1;
+}
+
+.brandTitle {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  color: $color-text-primary;
+  margin: 0 0 $spacing-xxs;
+  letter-spacing: -0.02em;
+}
+
+.brandSubtitle {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  margin: 0;
+}
+
+.alertError {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-xs;
+  background-color: $color-danger-light;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: $radius-md;
+  padding: $spacing-sm;
+  margin-bottom: $spacing-lg;
+  color: $color-danger-dark;
+  font-size: $font-size-sm;
+  line-height: 1.4;
+}
+
+.alertIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.alertText {
+  flex: 1;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xxs;
+}
+
+.label {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-primary;
+}
+
+.requiredStar {
+  color: $color-danger;
+}
+
+.input {
+  width: 100%;
+  height: 42px;
+  padding: 0 $spacing-sm;
+  font-size: $font-size-base;
+  color: $color-text-primary;
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  box-sizing: border-box;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+
+  &::placeholder {
+    color: $color-text-muted;
+  }
+
+  &:hover {
+    border-color: $color-border-hover;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+  }
+
+  &[aria-invalid="true"] {
+    border-color: $color-danger;
+
+    &:focus {
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+    }
+  }
+
+  &:disabled {
+    background-color: $color-surface-hover;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+}
+
+.passwordWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  .input {
+    padding-right: 44px;
+  }
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: $color-text-muted;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 0 $radius-md $radius-md 0;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-text-primary;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: -2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.fieldError {
+  font-size: $font-size-xs;
+  color: $color-danger;
+  font-weight: $font-weight-medium;
+  margin-top: 2px;
+}
+
+.submitButton {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-xs;
+  background-color: $color-primary;
+  color: #ffffff;
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+  border: none;
+  border-radius: $radius-md;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(14, 165, 233, 0.2);
+  transition: background-color $transition-fast, box-shadow $transition-fast;
+
+  &:hover:not(:disabled) {
+    background-color: $color-primary-hover;
+    box-shadow: 0 2px 4px rgba(14, 165, 233, 0.3);
+  }
+
+  &:focus-visible {
+    outline: 2px solid $color-primary;
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+}
+
+.buttonSpinner {
+  animation: spin 0.8s linear infinite;
+
+  @include reduced-motion;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
