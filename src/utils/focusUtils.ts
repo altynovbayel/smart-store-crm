@@ -80,3 +80,15 @@ export const restoreFocusWithFallback = (
     visibleSearch.focus();
   }
 };
+
+/**
+ * Returns focusable and currently interactive (not disabled, not hidden) elements within a container.
+ */
+export const getFocusableElements = (container: HTMLElement): HTMLElement[] => {
+  const elements = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+    )
+  );
+  return elements.filter(isElementVisible);
+};

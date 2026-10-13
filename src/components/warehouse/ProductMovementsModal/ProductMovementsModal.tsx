@@ -1,7 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { X, ArrowDownRight, ArrowUpRight, History, PackageX } from 'lucide-react';
+import {
+  X,
+  ArrowDownRight,
+  ArrowUpRight,
+  History,
+  PackageX,
+  AlertCircle,
+  RotateCcw,
+} from 'lucide-react';
 import type { Product, WarehouseMovement } from '../../../types';
-import { restoreFocusWithFallback } from '../../../utils/focusUtils';
+import { restoreFocusWithFallback, getFocusableElements } from '../../../utils/focusUtils';
 import { formatDateTime } from '../../../utils/dateUtils';
 import styles from './ProductMovementsModal.module.scss';
 
@@ -9,6 +17,9 @@ export interface ProductMovementsModalProps {
   isOpen: boolean;
   product: Product | null;
   movements: WarehouseMovement[];
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onClose: () => void;
 }
 
@@ -16,6 +27,9 @@ export const ProductMovementsModal = ({
   isOpen,
   product,
   movements,
+  isLoading = false,
+  error = null,
+  onRetry,
   onClose,
 }: ProductMovementsModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
@@ -43,18 +57,27 @@ export const ProductMovementsModal = ({
       }
 
       if (e.key === 'Tab' && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
+        const focusable = getFocusableElements(modalRef.current);
+        if (focusable.length === 0) {
+          e.preventDefault();
+          modalRef.current.focus();
+          return;
+        }
 
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
-        // If focus escaped the dialog container, pull it back in
-        if (!modalRef.current.contains(document.activeElement)) {
+        // If focus is currently on the modal card itself or outside
+        if (
+          document.activeElement === modalRef.current ||
+          !modalRef.current.contains(document.activeElement)
+        ) {
           e.preventDefault();
-          first.focus();
+          if (e.shiftKey) {
+            last.focus();
+          } else {
+            first.focus();
+          }
           return;
         }
 
@@ -86,6 +109,7 @@ export const ProductMovementsModal = ({
       <div
         className={styles.modalCard}
         ref={modalRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -131,7 +155,34 @@ export const ProductMovementsModal = ({
             </div>
           </div>
 
-          {movements.length === 0 ? (
+          {isLoading ? (
+            <div className={styles.centerStateBox} role="status" aria-live="polite">
+              <div className={styles.spinner} aria-hidden="true" />
+              <span className={styles.loadingText}>Загрузка истории движений...</span>
+            </div>
+          ) : error ? (
+            <div className={`${styles.centerStateBox} ${styles.errorStateBox}`} role="alert">
+              <AlertCircle size={28} className={styles.errorTitle} />
+              <strong className={styles.errorTitle}>Не удалось загрузить движения</strong>
+              <p className={styles.errorText}>{error}</p>
+              {onRetry && (
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => {
+                    const closeBtn = modalRef.current?.querySelector<HTMLButtonElement>(
+                      `.${styles.closeBtn}`
+                    );
+                    closeBtn?.focus();
+                    onRetry();
+                  }}
+                >
+                  <RotateCcw size={14} />
+                  <span>Повторить попытку</span>
+                </button>
+              )}
+            </div>
+          ) : movements.length === 0 ? (
             <div className={styles.emptyMovements}>
               <PackageX size={32} className={styles.emptyMovIcon} />
               <p className={styles.emptyMovTitle}>История движений пуста</p>

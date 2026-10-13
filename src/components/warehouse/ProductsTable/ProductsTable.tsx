@@ -6,6 +6,7 @@ import {
   ArrowDown,
   MoreHorizontal,
   Edit2,
+  SlidersHorizontal,
   History,
   Archive,
   PackageOpen,
@@ -27,6 +28,7 @@ export interface ProductsTableProps {
   sortConfig: ProductSortConfig;
   onSort: (field: ProductSortField) => void;
   onEditProduct: (product: Product) => void;
+  onAdjustStock?: (product: Product) => void;
   onViewMovements: (product: Product) => void;
   onArchiveProduct: (product: Product) => void;
   onResetFilters: () => void;
@@ -43,6 +45,7 @@ export const ProductsTable = ({
   sortConfig,
   onSort,
   onEditProduct,
+  onAdjustStock,
   onViewMovements,
   onArchiveProduct,
   onResetFilters,
@@ -187,7 +190,7 @@ export const ProductsTable = ({
 
     const rect = trigger.getBoundingClientRect();
     const menuWidth = 196;
-    const menuHeight = canManageProducts ? 126 : 46;
+    const menuHeight = canManageProducts ? 166 : 46;
 
     // Determine vertical placement: open upwards if space below is limited
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -431,19 +434,36 @@ export const ProductsTable = ({
             onKeyDown={handleMenuKeyDown}
           >
             {canManageProducts && (
-              <button
-                type="button"
-                className={styles.menuItem}
-                role="menuitem"
-                onClick={() => {
-                  const prod = activeMenuProduct;
-                  closeMenu(true);
-                  onEditProduct(prod);
-                }}
-              >
-                <Edit2 size={14} className={styles.menuIcon} />
-                <span>Редактировать</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  onClick={() => {
+                    const prod = activeMenuProduct;
+                    closeMenu(true);
+                    onEditProduct(prod);
+                  }}
+                >
+                  <Edit2 size={14} className={styles.menuIcon} />
+                  <span>Редактировать</span>
+                </button>
+                {onAdjustStock && (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    role="menuitem"
+                    onClick={() => {
+                      const prod = activeMenuProduct;
+                      closeMenu(true);
+                      onAdjustStock(prod);
+                    }}
+                  >
+                    <SlidersHorizontal size={14} className={styles.menuIcon} />
+                    <span>Корректировать остаток</span>
+                  </button>
+                )}
+              </>
             )}
             <button
               type="button"

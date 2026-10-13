@@ -1,3 +1,5 @@
+import type { ProductCategory } from './product';
+
 export type WarehouseMovementType =
   | 'income'
   | 'outcome'
@@ -28,4 +30,57 @@ export interface WarehouseSummary {
   totalInventoryCost: number;
   lowStockCount: number;
   outOfStockCount: number;
+}
+
+export interface CreateProductInput {
+  name: string;
+  sku: string;
+  barcode: string;
+  category: ProductCategory;
+  description: string;
+  purchasePrice: number;
+  sellingPrice: number;
+  minStockThreshold: number;
+  stock: number;
+}
+
+export interface UpdateProductInput {
+  name: string;
+  sku: string;
+  barcode: string;
+  category: ProductCategory;
+  description: string;
+  purchasePrice: number;
+  sellingPrice: number;
+  minStockThreshold: number;
+}
+
+export interface AdjustStockInput {
+  productId: string;
+  newStock: number;
+  reason: string;
+}
+
+export type WarehouseErrorField =
+  | 'name'
+  | 'sku'
+  | 'barcode'
+  | 'purchasePrice'
+  | 'sellingPrice'
+  | 'stock'
+  | 'reason';
+
+export interface MappedWarehouseError {
+  message: string;
+  field?: WarehouseErrorField;
+}
+
+export type WarehouseApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: MappedWarehouseError };
+
+export interface ProductFormSubmitResult {
+  success: boolean;
+  error?: string;
+  field?: WarehouseErrorField;
 }
