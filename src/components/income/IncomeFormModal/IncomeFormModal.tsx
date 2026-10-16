@@ -10,32 +10,81 @@ import {
   toCents,
 } from '../../../utils/incomeCalculations';
 import { IncomeFormItemRow } from './IncomeFormItemRow';
+import {
+  normalizeIncomePayload,
+  type PendingIncomeOperation,
+} from '../../../utils/pendingIncomeStorage';
 import styles from './IncomeFormModal.module.scss';
+
+/**
+ * Safely generates a standard v4 UUID for request idempotency.
+ */
+const generateUuid = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 export interface IncomeFormModalProps {
   isOpen: boolean;
   activeProducts: Product[];
+  initialResponsiblePerson?: string;
+  pendingOperation?: PendingIncomeOperation | null;
   onClose: () => void;
-  onSubmit: (data: IncomeReceiptFormData) => { success: boolean; error?: string };
+  onSubmit: (
+    data: IncomeReceiptFormData & { id?: string }
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    isNetworkError?: boolean;
+    isAuthError?: boolean;
+  }>;
 }
 
 export const IncomeFormModal = ({
   isOpen,
   activeProducts,
+  initialResponsiblePerson,
+  pendingOperation,
   onClose,
   onSubmit,
 }: IncomeFormModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(pendingOperation ? pendingOperation.id : null);
+  const lastSubmittedPayloadRef = useRef<string | null>(
+    pendingOperation ? normalizeIncomePayload(pendingOperation.payload) : null
+  );
+  const isIndeterminateRef = useRef<boolean>(Boolean(pendingOperation));
 
-  const [supplier, setSupplier] = useState('');
-  const [documentNumber, setDocumentNumber] = useState('');
-  const [receivedAt, setReceivedAt] = useState(() => getCurrentLocalDatetime());
-  const [responsiblePerson, setResponsiblePerson] = useState('Администратор');
-  const [comment, setComment] = useState('');
+  const [supplier, setSupplier] = useState(() => pendingOperation?.payload.supplier ?? '');
+  const [documentNumber, setDocumentNumber] = useState(
+    () => pendingOperation?.payload.documentNumber ?? ''
+  );
+  const [receivedAt, setReceivedAt] = useState(
+    () => pendingOperation?.payload.receivedAt ?? getCurrentLocalDatetime()
+  );
+  const responsiblePerson =
+    pendingOperation?.payload.responsiblePerson ||
+    initialResponsiblePerson?.trim() ||
+    'Администратор';
+  const [comment, setComment] = useState(() => pendingOperation?.payload.comment ?? '');
 
-  // Initial single empty item
+  // Initial single empty item or restored pending operation items
   const [items, setItems] = useState<FormItemState[]>(() => {
+    if (pendingOperation?.payload.items && pendingOperation.payload.items.length > 0) {
+      return pendingOperation.payload.items.map((it, idx) => ({
+        id: `pending-row-${idx + 1}`,
+        productId: it.productId,
+        rawQuantity: String(it.quantity),
+        rawPurchasePrice: String(it.purchasePrice),
+      }));
+    }
     const firstProduct = activeProducts[0];
     return [
       {
@@ -47,9 +96,21 @@ export const IncomeFormModal = ({
     ];
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>(() => {
+    const initialErrors: Record<string, string> = {};
+    if (pendingOperation) {
+      initialErrors.general =
+        'Предыдущая отправка этой накладной завершилась ошибкой сети. Нажмите «Повторить отправку», чтобы безопасно завершить проведение с исходным ключом.';
+    }
+    return initialErrors;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
 
   // Focus trap, Escape listener, background scroll lock, cleanup focus restoration
   useEffect(() => {
@@ -70,7 +131,9 @@ export const IncomeFormModal = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (!isSubmittingRef.current) {
+          onClose();
+        }
         return;
       }
 
@@ -78,7 +141,11 @@ export const IncomeFormModal = ({
         const focusable = modalRef.current.querySelectorAll<HTMLElement>(
           'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
         );
-        if (focusable.length === 0) return;
+        if (focusable.length === 0) {
+          e.preventDefault();
+          modalRef.current.focus();
+          return;
+        }
 
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -117,6 +184,8 @@ export const IncomeFormModal = ({
 
   // Add line item
   const handleAddItem = () => {
+    if (isSubmitting) return;
+
     // Pick the first product that is not already chosen in items
     const selectedIds = new Set(items.map((it) => it.productId));
     const available = activeProducts.find((p) => !selectedIds.has(p.id)) ?? activeProducts[0];
@@ -134,7 +203,7 @@ export const IncomeFormModal = ({
 
   // Remove line item and retain accessible focus
   const handleRemoveItem = (id: string) => {
-    if (items.length <= 1) return;
+    if (isSubmitting || items.length <= 1) return;
     const targetIndex = items.findIndex((it) => it.id === id);
     setItems((prev) => prev.filter((it) => it.id !== id));
 
@@ -211,8 +280,16 @@ export const IncomeFormModal = ({
       newErrors.supplier = 'Укажите наименование поставщика';
     }
 
-    if (!receivedAt) {
-      newErrors.receivedAt = 'Укажите дату и время прихода';
+    const cleanDate = receivedAt.trim();
+    if (!cleanDate) {
+      newErrors.receivedAt = 'Укажите дату и время поступления';
+    } else {
+      const parsedDate = new Date(cleanDate);
+      if (isNaN(parsedDate.getTime())) {
+        newErrors.receivedAt = 'Некорректная дата и время поступления';
+      } else if (parsedDate.getTime() > Date.now()) {
+        newErrors.receivedAt = 'Дата прихода не может быть в будущем';
+      }
     }
 
     if (!responsiblePerson.trim()) {
@@ -263,7 +340,7 @@ export const IncomeFormModal = ({
       } else {
         const p = Number(trimmedPrice);
         if (!Number.isFinite(p) || p < 0 || p > MAX_SAFE_PRICE) {
-          newErrors[`item-${it.id}-price`] = `Строка ${rowNum}: цена от 0 до 10 000 000 сом`;
+          newErrors[`item-${it.id}-price`] = `Строка ${rowNum}: цена от 0 до 100 000 000 сом`;
         } else if (it.productId) {
           const currentProd = activeProducts.find((prod) => prod.id === it.productId);
           if (currentProd && p > currentProd.sellingPrice) {
@@ -317,7 +394,7 @@ export const IncomeFormModal = ({
       data: {
         supplier: cleanSupplier,
         documentNumber: documentNumber.trim() || undefined,
-        receivedAt,
+        receivedAt: cleanDate,
         responsiblePerson: responsiblePerson.trim(),
         comment: comment.trim() || undefined,
         items: validatedItems,
@@ -325,22 +402,80 @@ export const IncomeFormModal = ({
     };
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const focusGeneralAlert = () => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const alertElem = modalRef.current?.querySelector<HTMLElement>(
+        `.${styles.generalAlert}`
+      );
+      alertElem?.focus();
+    });
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
 
     const result = validate();
     if (result.isValid && result.data) {
       setIsSubmitting(true);
-      const res = onSubmit(result.data);
-      if (res.success) {
-        onClose();
-      } else {
+      try {
+        const payloadSnapshot = normalizeIncomePayload(result.data);
+
+        // Guard against double stock-increase after indeterminate network outcome:
+        if (
+          isIndeterminateRef.current &&
+          lastSubmittedPayloadRef.current &&
+          lastSubmittedPayloadRef.current !== payloadSnapshot
+        ) {
+          setIsSubmitting(false);
+          setErrors((prev) => ({
+            ...prev,
+            general:
+              'Предыдущий запрос завершился ошибкой сети, и его результат на сервере ещё не определён. Чтобы избежать двойного оприходования, повторите отправку с исходными данными.',
+          }));
+          focusGeneralAlert();
+          return;
+        }
+
+        if (!idempotencyKeyRef.current) {
+          idempotencyKeyRef.current = generateUuid();
+        }
+        lastSubmittedPayloadRef.current = payloadSnapshot;
+
+        const res = await onSubmit({
+          ...result.data,
+          id: idempotencyKeyRef.current,
+        });
+
+        if (res.success) {
+          idempotencyKeyRef.current = null;
+          lastSubmittedPayloadRef.current = null;
+          isIndeterminateRef.current = false;
+          onClose();
+        } else {
+          setIsSubmitting(false);
+          isIndeterminateRef.current = Boolean(res.isNetworkError || res.isAuthError);
+          setErrors((prev) => ({
+            ...prev,
+            general: res.error || 'Ошибка при проведении накладной',
+          }));
+          focusGeneralAlert();
+        }
+      } catch (err: unknown) {
         setIsSubmitting(false);
+        isIndeterminateRef.current = true;
         setErrors((prev) => ({
           ...prev,
-          general: res.error || 'Ошибка при проведении накладной',
+          general:
+            err instanceof Error
+              ? err.message
+              : 'Произошла непредвиденная ошибка при проведении накладной',
         }));
+        focusGeneralAlert();
       }
     } else {
       // Focus first element with aria-invalid="true" after state update
@@ -358,10 +493,11 @@ export const IncomeFormModal = ({
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} onClick={isSubmitting ? undefined : onClose}>
       <div
         className={styles.modalCard}
         ref={modalRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -386,6 +522,7 @@ export const IncomeFormModal = ({
             type="button"
             className={styles.closeBtn}
             onClick={onClose}
+            disabled={isSubmitting}
             aria-label="Закрыть окно"
           >
             <X size={20} />
@@ -397,7 +534,11 @@ export const IncomeFormModal = ({
           <div className={styles.modalBody}>
             {/* General form error if any */}
             {errors.general && (
-              <div className={styles.generalAlert} role="alert">
+              <div
+                className={styles.generalAlert}
+                role="alert"
+                tabIndex={-1}
+              >
                 <AlertCircle size={16} />
                 <span>{errors.general}</span>
               </div>
@@ -416,6 +557,7 @@ export const IncomeFormModal = ({
                   className={styles.input}
                   placeholder="Например: Baseus Official KG"
                   value={supplier}
+                  disabled={isSubmitting}
                   onChange={(e) => setSupplier(e.target.value)}
                   aria-invalid={errors.supplier ? 'true' : undefined}
                   aria-describedby={errors.supplier ? 'inc-supplier-error' : undefined}
@@ -438,6 +580,7 @@ export const IncomeFormModal = ({
                   className={styles.input}
                   placeholder="СФ-00123 / ТОРГ-12"
                   value={documentNumber}
+                  disabled={isSubmitting}
                   onChange={(e) => setDocumentNumber(e.target.value)}
                 />
               </div>
@@ -453,6 +596,7 @@ export const IncomeFormModal = ({
                   step="1"
                   className={styles.input}
                   value={receivedAt}
+                  disabled={isSubmitting}
                   onChange={(e) => setReceivedAt(e.target.value)}
                   aria-invalid={errors.receivedAt ? 'true' : undefined}
                   aria-describedby={errors.receivedAt ? 'inc-received-at-error' : undefined}
@@ -467,22 +611,21 @@ export const IncomeFormModal = ({
               {/* Ответственный */}
               <div className={styles.formGroup}>
                 <label htmlFor="inc-responsible" className={styles.label}>
-                  Ответственный сотрудник <span className={styles.required}>*</span>
+                  Ответственный сотрудник
                 </label>
                 <input
                   id="inc-responsible"
                   type="text"
                   className={styles.input}
                   value={responsiblePerson}
-                  onChange={(e) => setResponsiblePerson(e.target.value)}
-                  aria-invalid={errors.responsiblePerson ? 'true' : undefined}
-                  aria-describedby={errors.responsiblePerson ? 'inc-resp-error' : undefined}
+                  readOnly
+                  disabled={isSubmitting}
+                  title="Ответственный сотрудник определяется автоматически по текущему пользователю"
+                  aria-describedby="inc-resp-hint"
                 />
-                {errors.responsiblePerson && (
-                  <span id="inc-resp-error" className={styles.errorText} role="alert">
-                    {errors.responsiblePerson}
-                  </span>
-                )}
+                <span id="inc-resp-hint" className={styles.fieldHint}>
+                  Определяется автоматически по текущей учётной записи
+                </span>
               </div>
             </div>
 
@@ -497,6 +640,7 @@ export const IncomeFormModal = ({
                 className={styles.textarea}
                 placeholder="Дополнительная информация о поставке или комментарий..."
                 value={comment}
+                disabled={isSubmitting}
                 onChange={(e) => setComment(e.target.value)}
               />
             </div>
@@ -511,6 +655,7 @@ export const IncomeFormModal = ({
                   type="button"
                   className={styles.addItemBtn}
                   onClick={handleAddItem}
+                  disabled={isSubmitting}
                 >
                   <Plus size={14} />
                   <span>Добавить позицию</span>
@@ -538,6 +683,7 @@ export const IncomeFormModal = ({
                       allItems={items}
                       errors={errors}
                       isOnlyRow={items.length <= 1}
+                      disabled={isSubmitting}
                       onProductChange={handleItemProductChange}
                       onFieldChange={handleItemFieldChange}
                       onRemove={handleRemoveItem}

@@ -12,6 +12,7 @@ export interface IncomeFormItemRowProps {
   allItems: FormItemState[];
   errors: Record<string, string>;
   isOnlyRow: boolean;
+  disabled?: boolean;
   onProductChange: (rowId: string, newProductId: string) => void;
   onFieldChange: (
     rowId: string,
@@ -29,6 +30,7 @@ export const IncomeFormItemRow = ({
   allItems,
   errors,
   isOnlyRow,
+  disabled = false,
   onProductChange,
   onFieldChange,
   onRemove,
@@ -51,6 +53,7 @@ export const IncomeFormItemRow = ({
           id={`item-prod-${item.id}`}
           className={styles.itemSelect}
           value={item.productId}
+          disabled={disabled}
           onChange={(e) => onProductChange(item.id, e.target.value)}
           aria-invalid={prodErr ? 'true' : undefined}
           aria-describedby={prodErr ? `item-prod-${item.id}-err` : undefined}
@@ -102,6 +105,7 @@ export const IncomeFormItemRow = ({
           className={styles.itemInput}
           placeholder="Кол-во"
           value={item.rawQuantity}
+          disabled={disabled}
           onChange={(e) => onFieldChange(item.id, 'rawQuantity', e.target.value)}
           aria-invalid={qtyErr ? 'true' : undefined}
           aria-describedby={qtyErr ? `item-qty-${item.id}-err` : undefined}
@@ -129,6 +133,7 @@ export const IncomeFormItemRow = ({
           className={styles.itemInput}
           placeholder="Цена"
           value={item.rawPurchasePrice}
+          disabled={disabled}
           onChange={(e) =>
             onFieldChange(item.id, 'rawPurchasePrice', e.target.value)
           }
@@ -159,7 +164,7 @@ export const IncomeFormItemRow = ({
         <button
           type="button"
           className={styles.deleteRowBtn}
-          disabled={isOnlyRow}
+          disabled={isOnlyRow || disabled}
           onClick={() => onRemove(item.id)}
           aria-label={`Удалить строку ${index + 1}`}
           title={

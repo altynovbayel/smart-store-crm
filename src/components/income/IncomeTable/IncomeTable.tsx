@@ -11,6 +11,9 @@ export interface IncomeTableProps {
   onResetFilters: () => void;
   onOpenCreateModal: () => void;
   onViewReceipt: (receipt: IncomeReceipt) => void;
+  canCreate?: boolean;
+  isCreateDisabled?: boolean;
+  createDisabledTooltip?: string;
 }
 
 export const IncomeTable = ({
@@ -20,6 +23,9 @@ export const IncomeTable = ({
   onResetFilters,
   onOpenCreateModal,
   onViewReceipt,
+  canCreate = true,
+  isCreateDisabled = false,
+  createDisabledTooltip,
 }: IncomeTableProps) => {
   // Empty state: No receipts registered at all
   if (totalReceiptsCount === 0) {
@@ -32,13 +38,17 @@ export const IncomeTable = ({
         <p className={styles.emptySubtitle}>
           Оформите первое поступление товаров от поставщика на склад для автоматического учёта остатков.
         </p>
-        <button
-          type="button"
-          className={styles.emptyActionBtn}
-          onClick={onOpenCreateModal}
-        >
-          Оформить первый приход
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            className={styles.emptyActionBtn}
+            onClick={onOpenCreateModal}
+            disabled={isCreateDisabled}
+            title={createDisabledTooltip ?? 'Оформить первое поступление товаров'}
+          >
+            Оформить первый приход
+          </button>
+        )}
       </div>
     );
   }

@@ -9,6 +9,7 @@ import type {
   WarehouseMovement,
 } from '../../types';
 import { exportProductsToCSV } from '../../utils/csvUtils';
+import { restoreFocusWithFallback } from '../../utils/focusUtils';
 import { useAuth } from '../../context';
 import { warehouseApi } from '../../api/warehouse';
 import { WarehouseStats } from '../../components/warehouse/WarehouseStats/WarehouseStats';
@@ -524,10 +525,7 @@ export const WarehousePage = () => {
             type="button"
             className={styles.retryBtn}
             onClick={() => {
-              const fallbackTarget =
-                document.querySelector<HTMLElement>('[data-add-product-btn]') ??
-                document.querySelector<HTMLElement>('input[type="search"]');
-              fallbackTarget?.focus();
+              restoreFocusWithFallback(null, '[data-add-product-btn]');
               void loadProducts();
             }}
           >
