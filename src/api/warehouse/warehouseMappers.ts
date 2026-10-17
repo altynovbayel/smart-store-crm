@@ -5,30 +5,15 @@ import type {
   WarehouseMovement,
   WarehouseMovementType,
 } from '../../types';
-import { calculateStockStatus, getIconTypeByCategory } from '../../utils/productUtils';
+import {
+  calculateStockStatus,
+  getIconTypeByCategory,
+  parseProductCategory,
+} from '../../utils/productUtils';
 import { minorToSom, somToMinor } from '../../utils/moneyUtils';
 
 type ProductRow = Database['public']['Tables']['products']['Row'];
 type StockMovementRow = Database['public']['Tables']['stock_movements']['Row'];
-
-const VALID_CATEGORIES: ReadonlySet<string> = new Set<ProductCategory>([
-  'cases',
-  'cables',
-  'glass',
-  'powerbanks',
-  'headphones',
-  'adapters',
-  'memory',
-  'holders',
-]);
-
-const parseProductCategory = (category: string): ProductCategory => {
-  if (VALID_CATEGORIES.has(category)) {
-    return category as ProductCategory;
-  }
-  // Safe fallback if category is not recognized
-  return 'cases';
-};
 
 const mapMovementTypeToFrontend = (
   dbType: Database['public']['Enums']['movement_type']

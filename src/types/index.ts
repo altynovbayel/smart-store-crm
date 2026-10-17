@@ -1,4 +1,4 @@
-export type * from './product';
+export * from './product';
 export * from './sale';
 export type * from './warehouse';
 export type * from './report';

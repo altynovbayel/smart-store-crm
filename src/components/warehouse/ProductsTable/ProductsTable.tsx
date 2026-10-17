@@ -362,7 +362,7 @@ export const ProductsTable = ({
 
                 {/* Category */}
                 <td className={styles.categoryCell}>
-                  <span className={`${styles.categoryBadge} ${styles[`cat-${product.category}`] || ''}`}>
+                  <span className={`${styles.categoryBadge} ${styles[`cat-${product.category}`] || styles['cat-other']}`}>
                     {product.categoryLabel}
                   </span>
                 </td>

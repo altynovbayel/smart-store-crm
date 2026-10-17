@@ -1,3 +1,13 @@
+import {
+  Keyboard,
+  Speaker,
+  Scissors,
+  Camera,
+  Radio,
+  Usb,
+  Package,
+  type LucideIcon,
+} from 'lucide-react';
 import type { ProductIconType } from '../../../types';
 import styles from './ProductThumbnail.module.scss';
 
@@ -7,10 +17,23 @@ export interface ProductThumbnailProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
+/** Icon types rendered with lucide-react glyphs (the rest use the inline illustrations below). */
+const LUCIDE_THUMBNAIL_ICONS: Partial<Record<ProductIconType, LucideIcon>> = {
+  keyboard: Keyboard,
+  speaker: Speaker,
+  grooming: Scissors,
+  camera: Camera,
+  fmtransmitter: Radio,
+  converter: Usb,
+  package: Package,
+};
+
 export const ProductThumbnail = ({
   type,
   size = 'md',
 }: ProductThumbnailProps) => {
+  const LucideGlyph = LUCIDE_THUMBNAIL_ICONS[type];
+
   return (
     <div className={`${styles.thumbnail} ${styles[size]}`} aria-hidden="true">
       {type === 'phone' && (
@@ -104,6 +127,24 @@ export const ProductThumbnail = ({
           <rect x="28" y="15" width="4" height="6" rx="1.5" fill="#475569" />
           <path d="M18 27h4v6h-4z" fill="#0f172a" />
         </svg>
+      )}
+
+      {type === 'tripod' && (
+        <svg viewBox="0 0 40 40" fill="none" className={styles.svgIcon}>
+          {/* Tripod illustration (lucide-react has no tripod glyph) */}
+          <rect x="14" y="6" width="12" height="7" rx="1.5" fill="#1e293b" />
+          <rect x="18.5" y="13" width="3" height="5" fill="#475569" />
+          <path
+            d="M20 18L11 34M20 18L29 34M20 18V33"
+            stroke="#1e293b"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+        </svg>
+      )}
+
+      {LucideGlyph && (
+        <LucideGlyph className={styles.lucideIcon} strokeWidth={1.75} />
       )}
     </div>
   );

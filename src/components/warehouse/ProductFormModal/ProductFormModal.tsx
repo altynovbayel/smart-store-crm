@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import type { Product, ProductCategory, ProductFormData } from '../../../types';
+import { PRODUCT_CATEGORIES, DEFAULT_PRODUCT_CATEGORY } from '../../../types';
+import { isProductCategory } from '../../../utils/productUtils';
 import { restoreFocusWithFallback, getFocusableElements } from '../../../utils/focusUtils';
 import styles from './ProductFormModal.module.scss';
 
@@ -59,7 +61,7 @@ export const ProductFormModal = ({
       name: '',
       sku: '',
       barcode: '',
-      category: 'cases',
+      category: DEFAULT_PRODUCT_CATEGORY,
       description: '',
       purchasePrice: '',
       sellingPrice: '',
@@ -474,21 +476,21 @@ export const ProductFormModal = ({
                 disabled={effectiveSubmitting}
                 className={styles.select}
                 value={formData.category}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    category: e.target.value as ProductCategory,
-                  })
-                }
+                onChange={(e) => {
+                  const nextCategory = e.target.value;
+                  if (isProductCategory(nextCategory)) {
+                    setFormData({
+                      ...formData,
+                      category: nextCategory,
+                    });
+                  }
+                }}
               >
-                <option value="cases">Чехлы</option>
-                <option value="cables">Кабели</option>
-                <option value="glass">Защитные стёкла</option>
-                <option value="powerbanks">Power Bank</option>
-                <option value="headphones">Наушники</option>
-                <option value="adapters">Адаптеры</option>
-                <option value="memory">Карты памяти</option>
-                <option value="holders">Автодержатели</option>
+                {PRODUCT_CATEGORIES.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             </div>
 

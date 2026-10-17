@@ -7,7 +7,9 @@ import {
   X,
   RotateCcw,
 } from 'lucide-react';
-import type { ProductCategory, StockStatus, ProductFilters } from '../../../types';
+import type { StockStatus, ProductFilters } from '../../../types';
+import { PRODUCT_CATEGORIES } from '../../../types';
+import { isProductCategory } from '../../../utils/productUtils';
 import styles from './WarehouseToolbar.module.scss';
 
 export interface WarehouseToolbarProps {
@@ -42,9 +44,10 @@ export const WarehouseToolbar = ({
   };
 
   const handleCategoryChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const nextCategory = e.target.value;
     onFilterChange({
       ...filters,
-      category: e.target.value as ProductCategory | 'all',
+      category: isProductCategory(nextCategory) ? nextCategory : 'all',
     });
   };
 
@@ -105,14 +108,11 @@ export const WarehouseToolbar = ({
             aria-label="Фильтр по категории"
           >
             <option value="all">Все категории</option>
-            <option value="cases">Чехлы</option>
-            <option value="cables">Кабели</option>
-            <option value="glass">Защитные стёкла</option>
-            <option value="powerbanks">Power Bank</option>
-            <option value="headphones">Наушники</option>
-            <option value="adapters">Адаптеры</option>
-            <option value="memory">Карты памяти</option>
-            <option value="holders">Автодержатели</option>
+            {PRODUCT_CATEGORIES.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
           </select>
         </div>
 
