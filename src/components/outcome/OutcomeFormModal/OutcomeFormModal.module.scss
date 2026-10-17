@@ -125,6 +125,14 @@
   color: $color-danger-dark;
   font-size: $font-size-sm;
   font-weight: $font-weight-medium;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    @include focus-ring($color-danger);
+  }
 }
 
 .fieldsGrid {
@@ -171,7 +179,20 @@
   &[aria-invalid="true"] {
     border-color: $color-danger;
   }
+
+  &[readonly] {
+    background-color: #f1f5f9;
+    color: $color-text-secondary;
+    cursor: default;
+  }
 }
+
+.fieldHint {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  margin-top: 2px;
+}
+
 
 .select {
   appearance: none;
@@ -483,6 +504,32 @@
   font-size: $font-size-sm;
   font-weight: $font-weight-semibold;
   color: $color-danger;
+}
+
+.priceLoading {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  font-style: italic;
+}
+
+.sourceTag {
+  margin-left: 4px;
+  font-size: 10px;
+  color: $color-text-muted;
+  font-weight: normal;
+}
+
+.priceWarningNotice {
+  margin-top: $spacing-xs;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  font-size: $font-size-xs;
+  color: $color-warning;
+  background-color: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: $radius-md;
+  padding: $spacing-xs $spacing-sm;
 }
 
 // Footer

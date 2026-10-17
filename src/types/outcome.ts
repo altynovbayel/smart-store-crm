@@ -72,3 +72,89 @@ export interface OutcomeSummary {
   todayCost: number;
   monthCount: number;
 }
+
+/**
+ * Error classification for outcome operations:
+ * - validation: client-side check failed, the request was never sent;
+ * - domain: server deterministically refused the operation (transaction rolled back);
+ * - network: transport failure or gateway/5xx response, server outcome is unknown;
+ * - auth: session expired or insufficient privileges, server outcome is unknown;
+ * - internal: unexpected client failure, server outcome is treated as unknown.
+ */
+export type OutcomeErrorKind = 'validation' | 'domain' | 'network' | 'auth' | 'internal';
+
+export interface MappedOutcomeError {
+  kind: OutcomeErrorKind;
+  message: string;
+  field?: string;
+}
+
+export type OutcomeApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: MappedOutcomeError };
+
+/**
+ * Form submission payload: the idempotency UUID is mandatory at this boundary,
+ * so an operation can never reach the RPC without a pre-generated key.
+ */
+export type OutcomeSubmitPayload = OutcomeFormData & { id: string };
+
+export type OutcomeSubmitResult =
+  | { success: true }
+  | { success: false; error: MappedOutcomeError };
+
+export type CreateOutcomeDocumentRpcItem = {
+  [key: string]: string | number;
+  product_id: string;
+  quantity: number;
+};
+
+export interface CreateOutcomeDocumentRpcParams {
+  p_reason: OutcomeReason;
+  p_reason_comment?: string;
+  p_occurred_at?: string;
+  p_items: CreateOutcomeDocumentRpcItem[];
+  p_id: string;
+}
+
+export interface CreateOutcomeDocumentInput {
+  id: string;
+  reason: OutcomeReason;
+  documentDate?: string;
+  responsiblePerson?: string;
+  comment?: string;
+  items: OutcomeItemInput[];
+}
+
+export interface CreateOutcomeDocumentResult {
+  id: string;
+  documentNumber: string;
+  totalCost: number;
+  itemsCount: number;
+}
+
+export interface FetchOutcomeDocumentsResult {
+  documents: OutcomeDocument[];
+  isTruncated: boolean;
+  totalFetched: number;
+}
+
+export interface PendingOutcomeOperation {
+  id: string;
+  userId: string;
+  payload: OutcomeFormData;
+  submittedAt: string;
+}
+
+export type HistoricalPriceSource =
+  | 'exact_history'
+  | 'earliest_history'
+  | 'catalog_fallback';
+
+export interface HistoricalPriceResult {
+  productId: string;
+  purchasePrice: number;
+  purchasePriceMinor: number;
+  source: HistoricalPriceSource;
+  effectiveFrom: string | null;
+}

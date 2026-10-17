@@ -2,44 +2,98 @@ import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { X, Plus, AlertCircle, ArrowUpFromLine } from 'lucide-react';
 import type {
   Product,
-  OutcomeFormData,
   OutcomeFormItemState,
   OutcomeReason,
+  OutcomeSubmitPayload,
+  OutcomeSubmitResult,
 } from '../../../types';
-import { OUTCOME_REASONS } from '../../../types';
-import { getCurrentLocalDatetime } from '../../../utils/dateUtils';
-import { formatCurrency, formatNumber } from '../../../utils/formatUtils';
-import { restoreFocusWithFallback } from '../../../utils/focusUtils';
+import {
+  getCurrentLocalDatetime,
+  formatToLocalDatetime,
+} from '../../../utils/dateUtils';
 import {
   calculateOutcomeTotals,
   validateOutcomeForm,
 } from '../../../utils/outcomeCalculations';
+import { generateUuid, isValidUuid } from '../../../utils/uuidUtils';
+import { isIndeterminateOutcomeError } from '../../../api/outcome';
+import {
+  normalizeOutcomePayload,
+  type PendingOutcomeOperation,
+} from '../../../utils/pendingOutcomeStorage';
 import { OutcomeFormItemRow } from './OutcomeFormItemRow';
+import { OutcomeFormFields } from './OutcomeFormFields';
+import { OutcomeFormSummary } from './OutcomeFormSummary';
+import { useOutcomeHistoricalPrices } from './useOutcomeHistoricalPrices';
+import { useOutcomeModalA11y } from './useOutcomeModalA11y';
 import styles from './OutcomeFormModal.module.scss';
 
 export interface OutcomeFormModalProps {
   isOpen: boolean;
   activeProducts: Product[];
+  initialResponsiblePerson?: string;
+  pendingOperation?: PendingOutcomeOperation | null;
   onClose: () => void;
-  onSubmit: (data: OutcomeFormData) => { success: boolean; error?: string };
+  onSubmit: (data: OutcomeSubmitPayload) => Promise<OutcomeSubmitResult>;
 }
+
+const PAYLOAD_MISMATCH_MESSAGE =
+  'Предыдущий запрос завершился ошибкой сети, и его результат на сервере ещё не определён. Чтобы избежать дублирования или некорректного списания, повторите отправку с исходными данными.';
+
+const MISSING_RETRY_KEY_MESSAGE =
+  'Внутренняя ошибка: потерян идентификатор неподтверждённой операции. Закройте форму и нажмите «Проверить статус» на странице.';
+
+const UUID_UNAVAILABLE_MESSAGE =
+  'Не удалось создать идентификатор операции: браузер не предоставляет криптографический генератор. Списание не отправлено.';
 
 export const OutcomeFormModal = ({
   isOpen,
   activeProducts,
+  initialResponsiblePerson,
+  pendingOperation,
   onClose,
   onSubmit,
 }: OutcomeFormModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  const [reason, setReason] = useState<OutcomeReason>('damaged');
-  const [documentDate, setDocumentDate] = useState(() => getCurrentLocalDatetime());
-  const [responsiblePerson, setResponsiblePerson] = useState('Администратор');
-  const [comment, setComment] = useState('');
+  // Idempotency key: restored from the pending operation or generated once on the first submit.
+  // It is never regenerated while the previous outcome is indeterminate.
+  const idempotencyKeyRef = useRef<string | null>(
+    pendingOperation ? pendingOperation.id : null
+  );
+  const lastSubmittedPayloadRef = useRef<string | null>(
+    pendingOperation ? normalizeOutcomePayload(pendingOperation.payload) : null
+  );
+  const isIndeterminateRef = useRef<boolean>(Boolean(pendingOperation));
+  const [isIndeterminate, setIsIndeterminate] = useState<boolean>(() =>
+    Boolean(pendingOperation)
+  );
 
-  // Initial single item with first product having stock > 0
+  const [reason, setReason] = useState<OutcomeReason>(
+    () => pendingOperation?.payload.reason ?? 'damaged'
+  );
+  const [documentDate, setDocumentDate] = useState<string>(() =>
+    pendingOperation?.payload.documentDate
+      ? formatToLocalDatetime(pendingOperation.payload.documentDate)
+      : getCurrentLocalDatetime()
+  );
+  const responsiblePerson =
+    pendingOperation?.payload.responsiblePerson ||
+    initialResponsiblePerson?.trim() ||
+    'Администратор';
+  const [comment, setComment] = useState(
+    () => pendingOperation?.payload.comment ?? ''
+  );
+
+  // Initial single item with first product having stock > 0 or restored pending operation items
   const [items, setItems] = useState<OutcomeFormItemState[]>(() => {
+    if (pendingOperation?.payload.items && pendingOperation.payload.items.length > 0) {
+      return pendingOperation.payload.items.map((it, idx) => ({
+        id: `pending-row-${idx + 1}`,
+        productId: it.productId,
+        rawQuantity: String(it.quantity),
+      }));
+    }
     const firstAvailable = activeProducts.find((p) => p.stock > 0) ?? activeProducts[0];
     return [
       {
@@ -50,73 +104,53 @@ export const OutcomeFormModal = ({
     ];
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>(() => {
+    const initialErrors: Record<string, string> = {};
+    if (pendingOperation) {
+      initialErrors.general =
+        'Предыдущая отправка этого списания завершилась ошибкой сети. Нажмите «Повторить отправку», чтобы безопасно завершить проведение с исходным ключом.';
+    }
+    return initialErrors;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
 
-  // Focus trap, Escape listener, background scroll lock, cleanup focus restoration
+  useEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+
+  // Cancel pending focus frames on close/unmount
   useEffect(() => {
     if (!isOpen) return;
-
-    if (document.activeElement instanceof HTMLElement) {
-      previousFocusRef.current = document.activeElement;
-    }
-
-    document.body.classList.add('drawer-open');
-
-    // Focus first input if focus is not already inside the modal
-    const isFocusInside = modalRef.current?.contains(document.activeElement);
-    if (!isFocusInside) {
-      const reasonSelect = modalRef.current?.querySelector<HTMLSelectElement>('#out-reason');
-      reasonSelect?.focus();
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
-
-      if (e.key === 'Tab' && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        // If focus escaped the dialog container, pull it back in
-        if (!modalRef.current.contains(document.activeElement)) {
-          e.preventDefault();
-          first.focus();
-          return;
-        }
-
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-
     return () => {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      document.body.classList.remove('drawer-open');
-      window.removeEventListener('keydown', handleKeyDown);
-      restoreFocusWithFallback(previousFocusRef.current, '[data-add-outcome-btn]');
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
+
+  const { historicalPrices, priceStatus, priceErrorMessage } = useOutcomeHistoricalPrices({
+    isOpen,
+    documentDate,
+    items,
+    activeProducts,
+  });
+
+  useOutcomeModalA11y({ isOpen, modalRef, isSubmittingRef, onClose });
 
   if (!isOpen) return null;
+
+  const scheduleFocus = (focusFn: () => void) => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      focusFn();
+    });
+  };
 
   // Add line item
   const handleAddItem = () => {
@@ -143,12 +177,7 @@ export const OutcomeFormModal = ({
     const targetIndex = items.findIndex((it) => it.id === id);
     setItems((prev) => prev.filter((it) => it.id !== id));
 
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-    }
-
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
+    scheduleFocus(() => {
       if (!modalRef.current) return;
       const remainingRows = modalRef.current.querySelectorAll<HTMLElement>(
         `.${styles.itemRow}`
@@ -174,85 +203,154 @@ export const OutcomeFormModal = ({
     });
   };
 
-  // Update item field
   const handleItemProductChange = (rowId: string, newProductId: string) => {
     setItems((prev) =>
-      prev.map((it) => {
-        if (it.id !== rowId) return it;
-        return {
-          ...it,
-          productId: newProductId,
-        };
-      })
+      prev.map((it) => (it.id === rowId ? { ...it, productId: newProductId } : it))
     );
   };
 
   const handleItemQuantityChange = (rowId: string, val: string) => {
     setItems((prev) =>
-      prev.map((it) => {
-        if (it.id !== rowId) return it;
-        return {
-          ...it,
-          rawQuantity: val,
-        };
-      })
+      prev.map((it) => (it.id === rowId ? { ...it, rawQuantity: val } : it))
     );
   };
 
   // Computed live totals for preview
-  const liveTotals = calculateOutcomeTotals(items, activeProducts, documentDate);
+  const liveTotals = calculateOutcomeTotals(
+    items,
+    activeProducts,
+    documentDate,
+    historicalPrices
+  );
 
-  const handleSubmit = (e: FormEvent) => {
+  const showGeneralError = (message: string) => {
+    setErrors((prev) => ({ ...prev, general: message }));
+    scheduleFocus(() => {
+      modalRef.current
+        ?.querySelector<HTMLElement>(`.${styles.generalAlert}`)
+        ?.focus();
+    });
+  };
+
+  /**
+   * Returns the idempotency key for this submission without ever creating a new one
+   * while the previous outcome is indeterminate. Returns null (with a shown error) when unusable.
+   */
+  const resolveIdempotencyKey = (): string | null => {
+    if (!idempotencyKeyRef.current) {
+      if (isIndeterminateRef.current) {
+        showGeneralError(MISSING_RETRY_KEY_MESSAGE);
+        return null;
+      }
+      idempotencyKeyRef.current = generateUuid();
+    }
+    if (!isValidUuid(idempotencyKeyRef.current)) {
+      // A fresh key could not be generated; nothing has been sent with it yet
+      if (!isIndeterminateRef.current) idempotencyKeyRef.current = null;
+      showGeneralError(
+        isIndeterminateRef.current ? MISSING_RETRY_KEY_MESSAGE : UUID_UNAVAILABLE_MESSAGE
+      );
+      return null;
+    }
+    return idempotencyKeyRef.current;
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmittingRef.current) return;
 
+    const isRetrySubmission = Boolean(isIndeterminate && idempotencyKeyRef.current);
     const result = validateOutcomeForm(
       reason,
       documentDate,
       responsiblePerson,
       comment,
       items,
-      activeProducts
+      activeProducts,
+      historicalPrices,
+      isRetrySubmission
     );
 
-    if (result.isValid && result.data) {
-      setIsSubmitting(true);
-      const res = onSubmit(result.data);
-      if (res.success) {
-        onClose();
-      } else {
-        setIsSubmitting(false);
-        setErrors((prev) => ({
-          ...prev,
-          general: res.error || 'Ошибка при проведении списания',
-        }));
-      }
-    } else {
+    if (!result.isValid || !result.data) {
       setErrors(result.errors);
       // Focus first element with aria-invalid="true" after state update
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        const firstInvalid = modalRef.current?.querySelector<HTMLElement>(
-          '[aria-invalid="true"]'
-        );
-        firstInvalid?.focus();
+      scheduleFocus(() => {
+        modalRef.current
+          ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+          ?.focus();
       });
+      return;
     }
+
+    const payloadSnapshot = normalizeOutcomePayload(result.data);
+
+    // Guard against double stock-decrease after indeterminate network outcome
+    if (
+      isIndeterminateRef.current &&
+      lastSubmittedPayloadRef.current &&
+      lastSubmittedPayloadRef.current !== payloadSnapshot
+    ) {
+      showGeneralError(PAYLOAD_MISMATCH_MESSAGE);
+      return;
+    }
+
+    const idempotencyKey = resolveIdempotencyKey();
+    if (!idempotencyKey) return;
+
+    lastSubmittedPayloadRef.current = payloadSnapshot;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
+    let res: OutcomeSubmitResult;
+    try {
+      res = await onSubmit({ ...result.data, id: idempotencyKey });
+    } catch {
+      // Unexpected failure: the request may have been sent, keep the key and payload locked
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      isIndeterminateRef.current = true;
+      setIsIndeterminate(true);
+      showGeneralError(
+        'Произошла непредвиденная ошибка при проведении списания. Результат не подтверждён — повторите отправку с теми же данными.'
+      );
+      return;
+    }
+
+    if (res.success) {
+      idempotencyKeyRef.current = null;
+      lastSubmittedPayloadRef.current = null;
+      isIndeterminateRef.current = false;
+      setIsIndeterminate(false);
+      onClose();
+      return;
+    }
+
+    isSubmittingRef.current = false;
+    setIsSubmitting(false);
+
+    const indeterminate = isIndeterminateOutcomeError(res.error);
+    isIndeterminateRef.current = indeterminate;
+    setIsIndeterminate(indeterminate);
+    if (!indeterminate) {
+      // Nothing was committed under this key: corrected data will get a fresh key
+      idempotencyKeyRef.current = null;
+      lastSubmittedPayloadRef.current = null;
+    }
+    showGeneralError(res.error.message || 'Ошибка при проведении списания');
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} onClick={isSubmitting ? undefined : onClose}>
       <div
         className={styles.modalCard}
         ref={modalRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-outcome-title"
       >
+
         {/* Header */}
         <header className={styles.modalHeader}>
           <div className={styles.titleGroup}>
@@ -272,120 +370,37 @@ export const OutcomeFormModal = ({
             type="button"
             className={styles.closeBtn}
             onClick={onClose}
+            disabled={isSubmitting}
             aria-label="Закрыть окно"
           >
             <X size={20} />
           </button>
         </header>
 
+
         {/* Form Body */}
         <form onSubmit={handleSubmit} className={styles.form} noValidate>
           <div className={styles.modalBody}>
             {/* General form error if any */}
             {errors.general && (
-              <div className={styles.generalAlert} role="alert">
+              <div className={styles.generalAlert} role="alert" tabIndex={-1}>
                 <AlertCircle size={16} />
                 <span>{errors.general}</span>
               </div>
             )}
 
             {/* Document Details Grid */}
-            <div className={styles.fieldsGrid}>
-              {/* Причина списания */}
-              <div className={styles.formGroup}>
-                <label htmlFor="out-reason" className={styles.label}>
-                  Причина списания <span className={styles.required}>*</span>
-                </label>
-                <select
-                  id="out-reason"
-                  className={styles.select}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value as OutcomeReason)}
-                  aria-invalid={errors.reason ? 'true' : undefined}
-                  aria-describedby={errors.reason ? 'out-reason-error' : undefined}
-                >
-                  {(Object.keys(OUTCOME_REASONS) as OutcomeReason[]).map((r) => (
-                    <option key={r} value={r}>
-                      {OUTCOME_REASONS[r]}
-                    </option>
-                  ))}
-                </select>
-                {errors.reason && (
-                  <span id="out-reason-error" className={styles.errorText} role="alert">
-                    {errors.reason}
-                  </span>
-                )}
-              </div>
-
-              {/* Дата и время списания */}
-              <div className={styles.formGroup}>
-                <label htmlFor="out-date" className={styles.label}>
-                  Дата и время списания <span className={styles.required}>*</span>
-                </label>
-                <input
-                  id="out-date"
-                  type="datetime-local"
-                  step="1"
-                  className={styles.input}
-                  value={documentDate}
-                  onChange={(e) => setDocumentDate(e.target.value)}
-                  aria-invalid={errors.documentDate ? 'true' : undefined}
-                  aria-describedby={errors.documentDate ? 'out-date-error' : undefined}
-                />
-                {errors.documentDate && (
-                  <span id="out-date-error" className={styles.errorText} role="alert">
-                    {errors.documentDate}
-                  </span>
-                )}
-              </div>
-
-              {/* Ответственный */}
-              <div className={styles.formGroup}>
-                <label htmlFor="out-responsible" className={styles.label}>
-                  Ответственный сотрудник <span className={styles.required}>*</span>
-                </label>
-                <input
-                  id="out-responsible"
-                  type="text"
-                  className={styles.input}
-                  value={responsiblePerson}
-                  onChange={(e) => setResponsiblePerson(e.target.value)}
-                  aria-invalid={errors.responsiblePerson ? 'true' : undefined}
-                  aria-describedby={errors.responsiblePerson ? 'out-resp-error' : undefined}
-                />
-                {errors.responsiblePerson && (
-                  <span id="out-resp-error" className={styles.errorText} role="alert">
-                    {errors.responsiblePerson}
-                  </span>
-                )}
-              </div>
-
-              {/* Примечание / комментарий */}
-              <div className={styles.formGroup}>
-                <label htmlFor="out-comment" className={styles.label}>
-                  Комментарий {reason === 'other' && <span className={styles.required}>*</span>}
-                </label>
-                <textarea
-                  id="out-comment"
-                  rows={2}
-                  className={styles.textarea}
-                  placeholder={
-                    reason === 'other'
-                      ? 'Опишите причину списания подробно (обязательно)...'
-                      : 'Дополнительные сведения, причина списания или номер акта...'
-                  }
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  aria-invalid={errors.comment ? 'true' : undefined}
-                  aria-describedby={errors.comment ? 'out-comment-error' : undefined}
-                />
-                {errors.comment && (
-                  <span id="out-comment-error" className={styles.errorText} role="alert">
-                    {errors.comment}
-                  </span>
-                )}
-              </div>
-            </div>
+            <OutcomeFormFields
+              reason={reason}
+              documentDate={documentDate}
+              responsiblePerson={responsiblePerson}
+              comment={comment}
+              errors={errors}
+              disabled={isSubmitting}
+              onReasonChange={setReason}
+              onDocumentDateChange={setDocumentDate}
+              onCommentChange={setComment}
+            />
 
             {/* Line Items Section */}
             <div className={styles.itemsSection}>
@@ -397,6 +412,7 @@ export const OutcomeFormModal = ({
                   type="button"
                   className={styles.addItemBtn}
                   onClick={handleAddItem}
+                  disabled={isSubmitting}
                 >
                   <Plus size={14} />
                   <span>Добавить товар</span>
@@ -419,12 +435,16 @@ export const OutcomeFormModal = ({
                       key={item.id}
                       index={idx}
                       item={item}
-                      documentDate={documentDate}
                       activeProducts={activeProducts}
                       selectedProduct={selectedProduct}
                       allItems={items}
                       errors={errors}
                       isOnlyRow={items.length <= 1}
+                      disabled={isSubmitting}
+                      historicalPrice={
+                        item.productId ? historicalPrices[item.productId] : undefined
+                      }
+                      priceStatus={priceStatus}
                       onProductChange={handleItemProductChange}
                       onQuantityChange={handleItemQuantityChange}
                       onRemove={handleRemoveItem}
@@ -435,32 +455,12 @@ export const OutcomeFormModal = ({
             </div>
 
             {/* Summary card before conducting */}
-            <div className={styles.summaryCard}>
-              <div className={styles.summaryItem}>
-                <span className={styles.summaryLabel}>Всего позиций:</span>
-                <strong className={styles.summaryValue}>{items.length}</strong>
-              </div>
-              <div className={styles.summaryItem}>
-                <span className={styles.summaryLabel}>Всего единиц к списанию:</span>
-                <strong className={styles.summaryValue}>
-                  {formatNumber(liveTotals.totalUnits)} шт.
-                </strong>
-              </div>
-              <div className={styles.summaryItem}>
-                <span className={styles.summaryLabel}>Общая себестоимость:</span>
-                <strong
-                  className={
-                    liveTotals.isOverflow
-                      ? styles.summaryTotalOverflow
-                      : styles.summaryTotalAmount
-                  }
-                >
-                  {liveTotals.isOverflow
-                    ? 'Превышен предел сумм'
-                    : formatCurrency(liveTotals.totalCost)}
-                </strong>
-              </div>
-            </div>
+            <OutcomeFormSummary
+              itemsCount={items.length}
+              totals={liveTotals}
+              priceStatus={priceStatus}
+              priceErrorMessage={priceErrorMessage}
+            />
           </div>
 
           {/* Footer buttons */}
@@ -478,10 +478,16 @@ export const OutcomeFormModal = ({
               className={styles.submitBtn}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Проведение...' : 'Провести списание'}
+              {isSubmitting
+                ? 'Проведение...'
+                : isIndeterminate
+                  ? 'Повторить отправку'
+                  : 'Провести списание'}
             </button>
           </footer>
+
         </form>
+
       </div>
     </div>
   );

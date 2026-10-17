@@ -1,20 +1,24 @@
 import { Trash2 } from 'lucide-react';
-import type { Product, OutcomeFormItemState } from '../../../types';
+import type {
+  Product,
+  OutcomeFormItemState,
+  HistoricalPriceResult,
+} from '../../../types';
 import { calculateOutcomeSubtotal } from '../../../utils/outcomeCalculations';
 import { formatCurrency } from '../../../utils/formatUtils';
-import { normalizeDocumentTimestamp } from '../../../utils/dateUtils';
-import { getHistoricalPurchasePrice } from '../../../utils/productUtils';
 import styles from './OutcomeFormModal.module.scss';
 
 export interface OutcomeFormItemRowProps {
   index: number;
   item: OutcomeFormItemState;
-  documentDate?: string;
   activeProducts: Product[];
   selectedProduct?: Product;
   allItems: OutcomeFormItemState[];
   errors: Record<string, string>;
   isOnlyRow: boolean;
+  disabled?: boolean;
+  historicalPrice?: HistoricalPriceResult;
+  priceStatus?: 'idle' | 'loading' | 'ready' | 'error';
   onProductChange: (rowId: string, newProductId: string) => void;
   onQuantityChange: (rowId: string, val: string) => void;
   onRemove: (rowId: string) => void;
@@ -23,24 +27,26 @@ export interface OutcomeFormItemRowProps {
 export const OutcomeFormItemRow = ({
   index,
   item,
-  documentDate,
   activeProducts,
   selectedProduct,
   allItems,
   errors,
   isOnlyRow,
+  disabled = false,
+  historicalPrice,
+  priceStatus = 'ready',
   onProductChange,
   onQuantityChange,
   onRemove,
 }: OutcomeFormItemRowProps) => {
-  const docTimestamp = normalizeDocumentTimestamp(documentDate);
-  const purchasePrice = selectedProduct
-    ? (docTimestamp > 0
-        ? getHistoricalPurchasePrice(selectedProduct, docTimestamp)
-        : selectedProduct.purchasePrice)
-    : 0;
+  const isPriceLoading = Boolean(selectedProduct && priceStatus === 'loading');
+  const isPriceError = Boolean(selectedProduct && (priceStatus === 'error' || (!historicalPrice && priceStatus === 'ready')));
 
-  const subtotal = selectedProduct
+  const purchasePrice = selectedProduct && historicalPrice
+    ? historicalPrice.purchasePrice
+    : null;
+
+  const subtotal = purchasePrice !== null
     ? calculateOutcomeSubtotal(item.rawQuantity, purchasePrice)
     : null;
 
@@ -60,10 +66,12 @@ export const OutcomeFormItemRow = ({
           id={`item-prod-${item.id}`}
           className={styles.itemSelect}
           value={item.productId}
+          disabled={disabled}
           onChange={(e) => onProductChange(item.id, e.target.value)}
           aria-invalid={prodErr ? 'true' : undefined}
           aria-describedby={prodErr ? `item-prod-${item.id}-err` : undefined}
         >
+
           <option value="">Выберите товар из каталога</option>
           {activeProducts.map((p) => {
             const isChosenElsewhere = allItems.some(
@@ -125,6 +133,7 @@ export const OutcomeFormItemRow = ({
           className={styles.itemInput}
           placeholder="Кол-во"
           value={item.rawQuantity}
+          disabled={disabled}
           onChange={(e) => onQuantityChange(item.id, e.target.value)}
           aria-invalid={qtyErr ? 'true' : undefined}
           aria-describedby={qtyErr ? `item-qty-${item.id}-err` : undefined}
@@ -140,11 +149,29 @@ export const OutcomeFormItemRow = ({
         )}
       </div>
 
-      {/* 4. Unit purchase price (read-only from product) */}
+      {/* 4. Unit purchase price (read-only historical price) */}
       <div className={styles.itemColPrice}>
         <span className={styles.miniLabel}>Себестоимость</span>
         <div className={styles.itemReadOnlyVal}>
-          {selectedProduct ? formatCurrency(purchasePrice) : '—'}
+          {isPriceLoading ? (
+            <span className={styles.priceLoading}>Загрузка...</span>
+          ) : isPriceError ? (
+            <span title="Не удалось загрузить историю цен">—</span>
+          ) : purchasePrice !== null ? (
+            <>
+              {formatCurrency(purchasePrice)}
+              {historicalPrice?.source === 'catalog_fallback' && (
+                <span
+                  className={styles.sourceTag}
+                  title="Используется текущая базовая цена каталога"
+                >
+                  (баз.)
+                </span>
+              )}
+            </>
+          ) : (
+            '—'
+          )}
         </div>
       </div>
 
@@ -152,7 +179,13 @@ export const OutcomeFormItemRow = ({
       <div className={styles.itemColTotal}>
         <span className={styles.miniLabel}>Сумма</span>
         <div className={styles.itemTotalVal}>
-          {subtotal !== null ? formatCurrency(subtotal) : '—'}
+          {isPriceLoading ? (
+            <span className={styles.priceLoading}>…</span>
+          ) : subtotal !== null ? (
+            formatCurrency(subtotal)
+          ) : (
+            '—'
+          )}
         </div>
       </div>
 
@@ -161,7 +194,7 @@ export const OutcomeFormItemRow = ({
         <button
           type="button"
           className={styles.deleteRowBtn}
-          disabled={isOnlyRow}
+          disabled={isOnlyRow || disabled}
           onClick={() => onRemove(item.id)}
           aria-label={`Удалить позицию ${index + 1}`}
           title={
@@ -173,6 +206,7 @@ export const OutcomeFormItemRow = ({
           <Trash2 size={16} />
         </button>
       </div>
+
     </div>
   );
 };
