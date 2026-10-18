@@ -208,6 +208,11 @@ export interface FetchSalesOptions {
   soldFrom?: string;
   /** Inclusive ISO upper bound for sold_at. */
   soldTo?: string;
+  /**
+   * Exclusive ISO upper bound for sold_at (PostgREST `lt`): calendar ranges are loaded
+   * as [soldFrom, soldBefore) with soldBefore = start of the day after the last day.
+   */
+  soldBefore?: string;
 }
 
 export interface FetchSalesResult {

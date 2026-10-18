@@ -76,6 +76,23 @@ export const mapSaleItemRowToSaleItem = (row: SaleItemRow): SaleItem => {
   };
 };
 
+/**
+ * Total sold units of a receipt (Σ quantity). `Sale.itemsCount` means UNITS across the app
+ * (InventoryProvider, mock sales, sales tables, history statistics) — not the number of lines.
+ * Non-safe-integer quantities are ignored so the sum can never become NaN or unsafe.
+ */
+export const sumSaleItemUnits = (items: readonly Pick<SaleItemRow, 'quantity'>[]): number => {
+  let units = 0;
+  for (const item of items) {
+    if (Number.isSafeInteger(item.quantity) && item.quantity > 0) {
+      const next = units + item.quantity;
+      if (!Number.isSafeInteger(next)) return units;
+      units = next;
+    }
+  }
+  return units;
+};
+
 /** Maps a sales row with embedded sale_items into the application Sale (totals come from the header). */
 export const mapSaleRowToSale = (row: SaleWithItemsRow): Sale => {
   const items = [...row.items].sort(compareSaleItemRows).map(mapSaleItemRowToSaleItem);
@@ -105,7 +122,7 @@ export const mapSaleRowToSale = (row: SaleWithItemsRow): Sale => {
     status: 'completed',
     statusLabel: 'Завершено',
     primaryProductName: items[0]?.productName,
-    itemsCount: items.length,
+    itemsCount: sumSaleItemUnits(row.items),
   };
 };
 

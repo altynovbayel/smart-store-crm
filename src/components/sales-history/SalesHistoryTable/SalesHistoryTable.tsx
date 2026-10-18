@@ -30,6 +30,12 @@ export interface SalesHistoryTableProps {
   hasActiveFilters: boolean;
   onResetFilters: () => void;
   onViewSale: (sale: Sale) => void;
+  /**
+   * Whether any receipt exists in the system at all (server data may cover only one period).
+   * false → "history is empty"; true / null (unknown) → "nothing matches the filters".
+   * When omitted, `totalCount === 0` decides (local data).
+   */
+  hasAnySales?: boolean | null;
 }
 
 const getPaymentBadgeClass = (method: PaymentMethod): string => {
@@ -53,6 +59,7 @@ export const SalesHistoryTable = ({
   hasActiveFilters,
   onResetFilters,
   onViewSale,
+  hasAnySales,
 }: SalesHistoryTableProps) => {
   const handleSort = (field: SalesHistorySortField) => {
     if (sort.field === field) {
@@ -80,7 +87,8 @@ export const SalesHistoryTable = ({
   };
 
   // Empty state: No sales exist in the system
-  if (totalCount === 0) {
+  const isHistoryEmpty = hasAnySales === undefined ? totalCount === 0 : hasAnySales === false;
+  if (isHistoryEmpty && sales.length === 0) {
     return (
       <div className={styles.emptyContainer}>
         <div className={styles.emptyIconBox}>

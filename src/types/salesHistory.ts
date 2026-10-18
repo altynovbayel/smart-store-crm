@@ -66,3 +66,15 @@ export interface SalesHistoryExportRow {
 
 export type CSVCellValue = string | number | undefined | null;
 
+/**
+ * Server-side loading range of the sales history.
+ * - all: latest receipts (archive capped by the fetch limit);
+ * - range: calendar range [soldFrom, soldBefore) in the user's LOCAL time zone;
+ * - invalid: custom range fails validation — nothing is loaded.
+ * `key` is a stable primitive used to (re)load only when the server range actually changes.
+ */
+export type SalesHistoryServerRange =
+  | { kind: 'all'; key: string }
+  | { kind: 'range'; key: string; soldFrom?: string; soldBefore?: string }
+  | { kind: 'invalid'; key: string };
+

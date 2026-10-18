@@ -70,13 +70,16 @@ const parseCreateSaleResponse = (data: unknown): CreateSaleResult | null => {
 export const salesApi = {
   /**
    * Loads receipts ordered by sold_at DESC, created_at DESC, id DESC in PostgREST-safe batches.
-   * Optional soldFrom/soldTo bound the period (inclusive) for future Sales History range queries.
+   * Optional bounds: soldFrom (inclusive), soldTo (inclusive) and soldBefore (exclusive) —
+   * Sales History loads calendar ranges as [soldFrom, soldBefore).
+   * Receipts are de-duplicated by id: a sale inserted between batches shifts OFFSET pagination.
    */
   async fetchSales(options: FetchSalesOptions = {}): Promise<SaleApiResult<FetchSalesResult>> {
-    const { signal, limit = DEFAULT_SALES_FETCH_LIMIT, soldFrom, soldTo } = options;
+    const { signal, limit = DEFAULT_SALES_FETCH_LIMIT, soldFrom, soldTo, soldBefore } = options;
 
     try {
       const sales: Sale[] = [];
+      const seenIds = new Set<string>();
       let from = 0;
       let hasMore = true;
 
@@ -93,6 +96,7 @@ export const salesApi = {
 
         if (soldFrom) query = query.gte('sold_at', soldFrom);
         if (soldTo) query = query.lte('sold_at', soldTo);
+        if (soldBefore) query = query.lt('sold_at', soldBefore);
         if (signal) query = query.abortSignal(signal);
 
         const { data, error, status } = await query;
@@ -102,7 +106,12 @@ export const salesApi = {
         }
 
         const rows = data ?? [];
-        sales.push(...rows.map(mapSaleRowToSale));
+        for (const row of rows) {
+          if (!seenIds.has(row.id)) {
+            seenIds.add(row.id);
+            sales.push(mapSaleRowToSale(row));
+          }
+        }
 
         if (rows.length < batchLimit) {
           hasMore = false;
@@ -119,6 +128,28 @@ export const salesApi = {
           totalFetched: sales.length,
         },
       };
+    } catch (err: unknown) {
+      if (isAbortError(err)) throw err;
+      return { success: false, error: mapSaleError(err) };
+    }
+  },
+
+  /**
+   * Lightweight existence probe (`id`, limit 1): distinguishes "no sales at all"
+   * from "nothing matches the selected period".
+   */
+  async hasAnySales(signal?: AbortSignal): Promise<SaleApiResult<boolean>> {
+    try {
+      let query = supabase.from('sales').select('id').limit(1);
+      if (signal) query = query.abortSignal(signal);
+
+      const { data, error, status } = await query;
+
+      if (error) {
+        return { success: false, error: mapSaleError({ ...error, status }) };
+      }
+
+      return { success: true, data: (data ?? []).length > 0 };
     } catch (err: unknown) {
       if (isAbortError(err)) throw err;
       return { success: false, error: mapSaleError(err) };
