@@ -235,3 +235,9 @@
   background-color: $color-warning-light;
   color: $color-warning-dark;
 }
+
+.limitNote {
+  padding: $spacing-sm $spacing-md;
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+}

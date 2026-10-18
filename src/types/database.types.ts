@@ -711,6 +711,18 @@ export type Database = {
         Args: { p_low_stock_limit?: number }
         Returns: Json
       }
+      rpc_get_sales_report: {
+        Args: { p_day_bounds: string[]; p_top_limit?: number }
+        Returns: Json
+      }
+      rpc_get_warehouse_report: {
+        Args: { p_attention_limit?: number }
+        Returns: Json
+      }
+      rpc_get_warehouse_report_export: {
+        Args: { p_after_id?: string; p_limit?: number; p_snapshot_at?: string }
+        Returns: Json
+      }
       rpc_update_product: {
         Args: {
           p_barcode: string

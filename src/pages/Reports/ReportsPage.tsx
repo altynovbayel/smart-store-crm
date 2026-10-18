@@ -1,25 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Download } from 'lucide-react';
-import type {
-  ReportTab,
-  ReportPeriod,
-  ReportDateRange,
-} from '../../types';
-import { useInventory } from '../../context';
+import { Navigate } from 'react-router-dom';
+import { AlertCircle, Download, RotateCcw } from 'lucide-react';
+import type { ReportTab, ReportPeriod, ReportDateRange } from '../../types';
+import { useAuth } from '../../context';
 import { formatCalendarDateKey } from '../../utils/dateUtils';
-import {
-  filterSalesByReportPeriod,
-  calculateSalesReportSummary,
-  generateDailyRevenueDataPoints,
-  calculatePaymentBreakdown,
-  calculatePopularProductsReport,
-  calculateWarehouseReportSummary,
-  calculateCategoryStockReport,
-  calculateStockStatusReport,
-  getAttentionProducts,
-  exportSalesReportToCSV,
-  exportWarehouseReportToCSV,
-} from '../../utils/reportUtils';
+import { exportSalesReportToCSV } from '../../utils/reportUtils';
+import { buildReportPeriodBounds } from '../../utils/reportCalculations';
 import {
   ReportTabs,
   ReportPeriodFilter,
@@ -32,10 +18,50 @@ import {
   CategoryStockReport,
   AttentionProductsTable,
 } from '../../components/reports';
+import { useReportsData } from './hooks/useReportsData';
+import { useWarehouseExport } from './hooks/useWarehouseExport';
 import styles from './ReportsPage.module.scss';
 
+interface SourceErrorProps {
+  message: string;
+  retryAttr: 'data-retry-reports-sales-btn' | 'data-retry-reports-warehouse-btn';
+  isBusy: boolean;
+  onRetry: () => void;
+}
+
+const SourceError = ({ message, retryAttr, isBusy, onRetry }: SourceErrorProps) => (
+  <div className={styles.errorBanner} role="alert">
+    <div className={styles.errorInfo}>
+      <AlertCircle size={20} />
+      <span className={styles.errorText}>{message}</span>
+    </div>
+    <button
+      type="button"
+      {...{ [retryAttr]: '' }}
+      className={styles.retryBtn}
+      onClick={onRetry}
+      disabled={isBusy}
+    >
+      <RotateCcw size={14} />
+      <span>{isBusy ? 'Загрузка...' : 'Повторить'}</span>
+    </button>
+  </div>
+);
+
+const LoadingCard = ({ label }: { label: string }) => (
+  <div className={styles.tableLoadingCard}>
+    <div className={styles.spinner} role="progressbar" aria-label={label} />
+    <span className={styles.loadingText}>{label}...</span>
+  </div>
+);
+
+/**
+ * Reports (admin only) work exclusively with the admin-only aggregation RPCs — no InventoryContext,
+ * no mock data. Sales and warehouse tabs are independent sources; only the active tab loads.
+ */
 export const ReportsPage = () => {
-  const { sales, activeProducts } = useInventory();
+  const { user, isAdmin } = useAuth();
+  const userId = user?.id ?? null;
 
   // Active Tab state
   const [activeTab, setActiveTab] = useState<ReportTab>('sales');
@@ -70,57 +96,39 @@ export const ReportsPage = () => {
     };
   }, []);
 
-  // --- Sales Report Calculations ---
-  const periodSales = useMemo(() => {
-    return filterSalesByReportPeriod(sales, period, dateRange, currentDateKey);
-  }, [sales, period, dateRange, currentDateKey]);
+  // Validated local calendar bounds [from, before); null → invalid / incomplete custom range
+  const salesPeriod = useMemo(
+    () => buildReportPeriodBounds(period, dateRange, currentDateKey),
+    [period, dateRange, currentDateKey]
+  );
 
-  const salesSummary = useMemo(() => {
-    return calculateSalesReportSummary(periodSales);
-  }, [periodSales]);
+  const { sales, warehouse, retrySales, retryWarehouse } = useReportsData({
+    userId,
+    isAdmin,
+    activeTab,
+    salesPeriod,
+  });
 
-  const dailyRevenuePoints = useMemo(() => {
-    return generateDailyRevenueDataPoints(
-      periodSales,
-      period,
-      dateRange,
-      currentDateKey
-    );
-  }, [periodSales, period, dateRange, currentDateKey]);
+  const exporter = useWarehouseExport({ userId, isAdmin, currentDateKey });
 
-  const paymentBreakdown = useMemo(() => {
-    return calculatePaymentBreakdown(periodSales);
-  }, [periodSales]);
+  // Shown sales data always belongs to the currently selected period
+  const salesData = salesPeriod && sales.dataKey === salesPeriod.key ? sales.data : null;
+  const warehouseData = warehouse.data;
 
-  const popularProducts = useMemo(() => {
-    return calculatePopularProductsReport(periodSales);
-  }, [periodSales]);
-
-  // --- Warehouse Report Calculations ---
-  const warehouseSummary = useMemo(() => {
-    return calculateWarehouseReportSummary(activeProducts);
-  }, [activeProducts]);
-
-  const categoryBreakdown = useMemo(() => {
-    return calculateCategoryStockReport(activeProducts);
-  }, [activeProducts]);
-
-  const stockStatusBreakdown = useMemo(() => {
-    return calculateStockStatusReport(activeProducts);
-  }, [activeProducts]);
-
-  const attentionProducts = useMemo(() => {
-    return getAttentionProducts(activeProducts);
-  }, [activeProducts]);
-
-  // --- Handlers ---
+  // CSV of the sales report is built from exactly the daily series shown on the page
   const handleExportSalesReport = useCallback(() => {
-    exportSalesReportToCSV(dailyRevenuePoints, currentDateKey);
-  }, [dailyRevenuePoints, currentDateKey]);
+    if (!salesData) return;
+    exportSalesReportToCSV(salesData.daily, currentDateKey);
+  }, [salesData, currentDateKey]);
 
+  const { startExport } = exporter;
   const handleExportWarehouseReport = useCallback(() => {
-    exportWarehouseReportToCSV(activeProducts, currentDateKey);
-  }, [activeProducts, currentDateKey]);
+    void startExport();
+  }, [startExport]);
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className={styles.reportsPage}>
@@ -143,6 +151,7 @@ export const ReportsPage = () => {
           id="panel-sales"
           role="tabpanel"
           aria-labelledby="tab-sales"
+          aria-busy={sales.isLoading || sales.isRefreshing}
           className={styles.tabPanel}
         >
           {/* Period Filter & CSV Export */}
@@ -153,25 +162,56 @@ export const ReportsPage = () => {
             onDateRangeChange={setDateRange}
             currentDateKey={currentDateKey}
             onExportCSV={handleExportSalesReport}
-            isExportDisabled={dailyRevenuePoints.length === 0}
+            isExportDisabled={!salesData || sales.isLoading || sales.isRefreshing}
             exportButtonLabel="Экспорт отчёта по продажам"
           />
 
-          {/* 6 Summary Stat Cards */}
-          <SalesReportStats summary={salesSummary} />
+          {sales.isRefreshing && salesData && (
+            <span className={styles.statusLine} role="status">
+              Обновление данных...
+            </span>
+          )}
 
-          {/* Main Visuals Grid: Chart + Payment Structure */}
-          <div className={styles.salesVisualsGrid}>
-            <div className={styles.chartCol}>
-              <RevenueReportChart data={dailyRevenuePoints} />
-            </div>
-            <div className={styles.paymentCol}>
-              <PaymentBreakdown items={paymentBreakdown} />
-            </div>
-          </div>
+          {sales.error && salesPeriod && (
+            <SourceError
+              message={sales.error}
+              retryAttr="data-retry-reports-sales-btn"
+              isBusy={sales.isLoading || sales.isRefreshing}
+              onRetry={retrySales}
+            />
+          )}
 
-          {/* Popular Products Table */}
-          <PopularProductsReport items={popularProducts} />
+          {!salesPeriod ? (
+            <p className={styles.emptyPeriodNote} role="status">
+              Укажите корректный период (до 366 дней), чтобы сформировать отчёт.
+            </p>
+          ) : salesData ? (
+            <>
+              {salesData.summary.receiptsCount === 0 && (
+                <p className={styles.emptyPeriodNote} role="status">
+                  За выбранный период продаж нет.
+                </p>
+              )}
+
+              {/* 6 Summary Stat Cards */}
+              <SalesReportStats summary={salesData.summary} />
+
+              {/* Main Visuals Grid: Chart + Payment Structure */}
+              <div className={styles.salesVisualsGrid}>
+                <div className={styles.chartCol}>
+                  <RevenueReportChart data={salesData.daily} />
+                </div>
+                <div className={styles.paymentCol}>
+                  <PaymentBreakdown items={salesData.payments} />
+                </div>
+              </div>
+
+              {/* Popular Products Table */}
+              <PopularProductsReport items={salesData.popularProducts} />
+            </>
+          ) : (
+            sales.isLoading && <LoadingCard label="Загрузка отчёта по продажам" />
+          )}
         </section>
       )}
 
@@ -181,6 +221,7 @@ export const ReportsPage = () => {
           id="panel-warehouse"
           role="tabpanel"
           aria-labelledby="tab-warehouse"
+          aria-busy={warehouse.isLoading || warehouse.isRefreshing || exporter.isExporting}
           className={styles.tabPanel}
         >
           {/* Warehouse Toolbar with CSV Export */}
@@ -188,37 +229,97 @@ export const ReportsPage = () => {
             <div className={styles.warehouseToolbarInfo}>
               <span className={styles.liveBadge}>Реальное время</span>
               <span className={styles.liveSubtitle}>
-                Показатели рассчитаны по {activeProducts.length} активным товарам на складе
+                {warehouseData
+                  ? `Показатели рассчитаны по ${warehouseData.summary.activePositionsCount} активным товарам на складе`
+                  : 'Показатели рассчитываются по всем активным товарам на складе'}
               </span>
             </div>
 
             <button
               type="button"
+              data-export-warehouse-btn
               className={styles.exportButton}
               onClick={handleExportWarehouseReport}
-              disabled={activeProducts.length === 0}
+              disabled={
+                exporter.isExporting ||
+                !warehouseData ||
+                warehouseData.summary.activePositionsCount === 0
+              }
               aria-label="Экспортировать складской отчёт в CSV"
             >
               <Download size={16} aria-hidden="true" />
-              <span>Экспорт отчёта по складу</span>
+              <span>
+                {exporter.isExporting
+                  ? `Выгружено ${exporter.exportedCount} товаров...`
+                  : 'Экспорт отчёта по складу'}
+              </span>
             </button>
           </div>
 
-          {/* 5 Warehouse Metric Cards */}
-          <WarehouseReportStats summary={warehouseSummary} />
+          {exporter.isExporting && (
+            <span className={styles.statusLine} role="status">
+              Выгружено {exporter.exportedCount} товаров...
+            </span>
+          )}
 
-          {/* Category Stock & Status Distribution Grid */}
-          <div className={styles.warehouseVisualsGrid}>
-            <div className={styles.categoryCol}>
-              <CategoryStockReport items={categoryBreakdown} />
+          {exporter.error && (
+            <div className={styles.errorBanner} role="alert">
+              <div className={styles.errorInfo}>
+                <AlertCircle size={20} />
+                <span className={styles.errorText}>{exporter.error}</span>
+              </div>
+              <button
+                type="button"
+                data-retry-warehouse-export-btn
+                className={styles.retryBtn}
+                onClick={handleExportWarehouseReport}
+                disabled={exporter.isExporting}
+              >
+                <RotateCcw size={14} />
+                <span>Повторить экспорт</span>
+              </button>
             </div>
-            <div className={styles.statusCol}>
-              <StockStatusReport items={stockStatusBreakdown} />
-            </div>
-          </div>
+          )}
 
-          {/* Attention Products Table */}
-          <AttentionProductsTable items={attentionProducts} />
+          {warehouse.isRefreshing && warehouseData && (
+            <span className={styles.statusLine} role="status">
+              Обновление данных...
+            </span>
+          )}
+
+          {warehouse.error && (
+            <SourceError
+              message={warehouse.error}
+              retryAttr="data-retry-reports-warehouse-btn"
+              isBusy={warehouse.isLoading || warehouse.isRefreshing}
+              onRetry={retryWarehouse}
+            />
+          )}
+
+          {warehouseData ? (
+            <>
+              {/* 5 Warehouse Metric Cards */}
+              <WarehouseReportStats summary={warehouseData.summary} />
+
+              {/* Category Stock & Status Distribution Grid */}
+              <div className={styles.warehouseVisualsGrid}>
+                <div className={styles.categoryCol}>
+                  <CategoryStockReport items={warehouseData.categories} />
+                </div>
+                <div className={styles.statusCol}>
+                  <StockStatusReport items={warehouseData.statuses} />
+                </div>
+              </div>
+
+              {/* Attention Products Table */}
+              <AttentionProductsTable
+                items={warehouseData.attention}
+                totalCount={warehouseData.attentionTotal}
+              />
+            </>
+          ) : (
+            warehouse.isLoading && <LoadingCard label="Загрузка отчёта по складу" />
+          )}
         </section>
       )}
     </div>
