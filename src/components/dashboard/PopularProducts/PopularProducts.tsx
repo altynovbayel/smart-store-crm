@@ -5,38 +5,47 @@ import styles from './PopularProducts.module.scss';
 
 export interface PopularProductsProps {
   products: PopularProductItem[];
+  /** Period caption shown next to the title, e.g. "за 30 дней". */
+  periodLabel?: string;
 }
 
-export const PopularProducts = ({ products }: PopularProductsProps) => {
+export const PopularProducts = ({ products, periodLabel }: PopularProductsProps) => {
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h2 className={styles.title}>Популярные товары</h2>
+        <h2 className={styles.title}>
+          Популярные товары
+          {periodLabel && <span className={styles.periodLabel}> {periodLabel}</span>}
+        </h2>
         <Link to="/warehouse" className={styles.actionLink}>
           Все товары
         </Link>
       </header>
 
-      <ul className={styles.list}>
-        {products.map((item) => (
-          <li key={item.id} className={styles.item}>
-            <span className={styles.rank}>{item.rank}</span>
-            <ProductThumbnail type={item.iconType} size="md" />
+      {products.length === 0 ? (
+        <p className={styles.emptyText}>Продаж за период нет</p>
+      ) : (
+        <ul className={styles.list}>
+          {products.map((item) => (
+            <li key={item.id} className={styles.item}>
+              <span className={styles.rank}>{item.rank}</span>
+              <ProductThumbnail type={item.iconType} size="md" />
 
-            <div className={styles.meta}>
-              <span className={styles.productName}>{item.name}</span>
-              <span className={styles.categoryLabel}>{item.categoryLabel}</span>
-            </div>
+              <div className={styles.meta}>
+                <span className={styles.productName}>{item.name}</span>
+                <span className={styles.categoryLabel}>{item.categoryLabel}</span>
+              </div>
 
-            <div className={styles.salesData}>
-              <span className={styles.salesCount}>{item.salesCount} шт.</span>
-              <span className={styles.revenueAmount}>
-                {item.totalRevenue.toLocaleString('ru-RU')} сом
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
+              <div className={styles.salesData}>
+                <span className={styles.salesCount}>{item.salesCount} шт.</span>
+                <span className={styles.revenueAmount}>
+                  {item.totalRevenue.toLocaleString('ru-RU')} сом
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 };

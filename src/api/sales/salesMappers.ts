@@ -93,6 +93,13 @@ export const sumSaleItemUnits = (items: readonly Pick<SaleItemRow, 'quantity'>[]
   return units;
 };
 
+/** "First line name" or "First line name +N" (N = number of other lines), as in InventoryProvider. */
+export const buildPrimaryProductName = (items: readonly Pick<SaleItem, 'productName'>[]): string | undefined => {
+  const first = items[0]?.productName;
+  if (!first) return undefined;
+  return items.length > 1 ? `${first} +${items.length - 1}` : first;
+};
+
 /** Maps a sales row with embedded sale_items into the application Sale (totals come from the header). */
 export const mapSaleRowToSale = (row: SaleWithItemsRow): Sale => {
   const items = [...row.items].sort(compareSaleItemRows).map(mapSaleItemRowToSaleItem);
@@ -121,7 +128,8 @@ export const mapSaleRowToSale = (row: SaleWithItemsRow): Sale => {
     comment: row.comment ?? undefined,
     status: 'completed',
     statusLabel: 'Завершено',
-    primaryProductName: items[0]?.productName,
+    // Same convention as the local store and the tables' fallback: "first line +N other lines"
+    primaryProductName: buildPrimaryProductName(items),
     itemsCount: sumSaleItemUnits(row.items),
   };
 };

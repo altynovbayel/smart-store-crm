@@ -1,213 +1,58 @@
 import { useState, useEffect, useMemo } from 'react';
+import { AlertCircle, RotateCcw } from 'lucide-react';
 import { StatCard } from '../../components/dashboard/StatCard/StatCard';
 import { RevenueChart } from '../../components/dashboard/RevenueChart/RevenueChart';
 import { PopularProducts } from '../../components/dashboard/PopularProducts/PopularProducts';
 import { RecentSales } from '../../components/dashboard/RecentSales/RecentSales';
 import { LowStock } from '../../components/dashboard/LowStock/LowStock';
-import { useInventory } from '../../context';
-import type {
-  DashboardMetric,
-  PopularProductItem,
-  RevenueDataPoint,
-  LowStockItem,
-  Product,
-  ProductIconType,
-  Sale,
-} from '../../types';
-import { formatCurrency, formatNumber } from '../../utils/formatUtils';
-import { isToday, parseCustomDate, formatCalendarDateKey } from '../../utils/dateUtils';
-import { toCents, fromCents } from '../../utils/incomeCalculations';
+import { useAuth } from '../../context';
+import type { DashboardMetric } from '../../types';
+import { formatCalendarDateKey } from '../../utils/dateUtils';
+import {
+  buildLowStockItems,
+  buildPopularProductItems,
+  buildRecentSaleRows,
+  buildRevenueChartPoints,
+  buildSalesMetricCards,
+  buildStockMetricCards,
+} from '../../utils/dashboardCalculations';
+import { useDashboardData } from './hooks/useDashboardData';
 import styles from './DashboardPage.module.scss';
 
-const MONTH_NAMES_SHORT = [
-  'янв',
-  'фев',
-  'мар',
-  'апр',
-  'май',
-  'июн',
-  'июл',
-  'авг',
-  'сен',
-  'окт',
-  'ноя',
-  'дек',
-];
+type SourceView = 'loading' | 'error' | 'ready';
 
-const MONTH_NAMES_FULL = [
-  'января',
-  'февраля',
-  'марта',
-  'апреля',
-  'мая',
-  'июня',
-  'июля',
-  'августа',
-  'сентября',
-  'октября',
-  'ноября',
-  'декабря',
-];
-
-const buildRevenueData = (
-  sales: Sale[],
-  days: number,
-  referenceDateStr: string
-): RevenueDataPoint[] => {
-  const points: RevenueDataPoint[] = [];
-  const refDate = parseCustomDate(referenceDateStr) ?? new Date();
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(
-      refDate.getFullYear(),
-      refDate.getMonth(),
-      refDate.getDate() - i
-    );
-    const year = d.getFullYear();
-    const month = d.getMonth();
-    const day = d.getDate();
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-    let dayRevenue = 0;
-    for (const sale of sales) {
-      if (isToday(sale.soldAt, dateStr)) {
-        dayRevenue += sale.totalAmount;
-      }
-    }
-
-    points.push({
-      date: dateStr,
-      label: `${day} ${MONTH_NAMES_SHORT[month]}`,
-      revenue: dayRevenue,
-      formattedRevenue: `${dayRevenue.toLocaleString('ru-RU')} сом`,
-      fullDate: `${day} ${MONTH_NAMES_FULL[month]} ${year}`,
-    });
-  }
-
-  return points;
+const toSourceView = (source: { data: unknown; isLoading: boolean; error: string | null }): SourceView => {
+  if (source.data) return 'ready';
+  return source.error && !source.isLoading ? 'error' : 'loading';
 };
 
-const buildPopularProducts = (
-  sales: Sale[],
-  allProducts: Product[]
-): PopularProductItem[] => {
-  const statsByProductId = new Map<
-    string,
-    {
-      count: number;
-      revenueCents: number;
-      fallbackName: string;
-      fallbackSku: string;
-    }
-  >();
+interface BlockPlaceholderProps {
+  view: Exclude<SourceView, 'ready'>;
+  label: string;
+}
 
-  for (const s of sales) {
-    const itemsFinalTotalCents = s.items.reduce(
-      (acc, it) => acc + toCents(it.finalAmount),
-      0
-    );
-    const receiptDiscountCents = toCents(s.receiptDiscountAmount || 0);
-    const clampedDiscountCents = Math.min(
-      receiptDiscountCents,
-      itemsFinalTotalCents
-    );
+/** Loading / unavailable placeholder of one Dashboard block (keeps the grid layout). */
+const BlockPlaceholder = ({ view, label }: BlockPlaceholderProps) => (
+  <div className={`${styles.tableLoadingCard} ${styles.blockPlaceholder}`}>
+    {view === 'loading' ? (
+      <>
+        <div className={styles.spinner} role="progressbar" aria-label={`Загрузка: ${label}`} />
+        <span className={styles.loadingText}>Загрузка: {label}...</span>
+      </>
+    ) : (
+      <span className={styles.loadingText}>{label}: данные недоступны</span>
+    )}
+  </div>
+);
 
-    // Distribute receipt discount using Largest Remainder Method (Hare-Niemeyer)
-    const discountByItemIdx = new Map<number, number>();
-    if (clampedDiscountCents > 0 && itemsFinalTotalCents > 0) {
-      const parts = s.items.map((it, idx) => {
-        const itemFinalCents = toCents(it.finalAmount);
-        const exact =
-          (clampedDiscountCents * itemFinalCents) / itemsFinalTotalCents;
-        const base = Math.floor(exact);
-        const remainder = exact - base;
-        return { idx, base, remainder };
-      });
-
-      const sumBase = parts.reduce((acc, p) => acc + p.base, 0);
-      let centsLeft = clampedDiscountCents - sumBase;
-
-      // Sort by remainder descending, tie-break by index ascending
-      parts.sort((a, b) => b.remainder - a.remainder || a.idx - b.idx);
-
-      for (const part of parts) {
-        let add = 0;
-        if (centsLeft > 0) {
-          add = 1;
-          centsLeft--;
-        }
-        discountByItemIdx.set(part.idx, part.base + add);
-      }
-    }
-
-    s.items.forEach((item, idx) => {
-      const itemFinalCents = toCents(item.finalAmount);
-      const allocatedDiscountCents = discountByItemIdx.get(idx) ?? 0;
-      const effectiveRevenueCents = Math.max(
-        0,
-        itemFinalCents - allocatedDiscountCents
-      );
-
-      const existing = statsByProductId.get(item.productId) || {
-        count: 0,
-        revenueCents: 0,
-        fallbackName: item.productName,
-        fallbackSku: item.sku,
-      };
-      existing.count += item.quantity;
-      existing.revenueCents += effectiveRevenueCents;
-      statsByProductId.set(item.productId, existing);
-    });
-  }
-
-  const ranked = Array.from(statsByProductId.entries())
-    .map(([productId, stat]) => {
-      const prod = allProducts.find((p) => p.id === productId);
-      const iconType: ProductIconType = prod?.iconType ?? 'phone';
-      return {
-        id: productId,
-        name: prod?.name || stat.fallbackName || 'Товар',
-        categoryLabel: prod?.categoryLabel || 'Аксессуары',
-        salesCount: stat.count,
-        totalRevenue: fromCents(stat.revenueCents),
-        iconType,
-      };
-    })
-    .sort((a, b) => b.salesCount - a.salesCount || b.totalRevenue - a.totalRevenue);
-
-  if (ranked.length > 0) {
-    return ranked.slice(0, 4).map((item, index) => ({
-      ...item,
-      rank: index + 1,
-    }));
-  }
-
-  return allProducts.slice(0, 4).map((p, index) => ({
-    id: p.id,
-    rank: index + 1,
-    name: p.name,
-    categoryLabel: p.categoryLabel,
-    salesCount: 0,
-    totalRevenue: 0,
-    iconType: p.iconType,
-  }));
-};
-
-const buildLowStockItems = (products: Product[]): LowStockItem[] => {
-  return products
-    .filter((p) => p.status === 'low_stock' || p.status === 'out_of_stock')
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      stock: p.stock,
-      threshold: p.minStockThreshold,
-      statusLabel: p.status === 'out_of_stock' ? 'Нет в наличии' : 'Мало',
-      severity: p.status === 'out_of_stock' ? 'critical' : 'warning',
-    }));
-};
-
+/**
+ * Dashboard works only with the read-only aggregation RPCs (no InventoryContext, no mock data,
+ * no cost / purchase price / profit). Sales and stock are independent sources: an error in one
+ * never hides the other.
+ */
 export const DashboardPage = () => {
-  const { sales, activeProducts, products } = useInventory();
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
 
   // Keep track of current calendar date (YYYY-MM-DD)
   const [currentDateKey, setCurrentDateKey] = useState(() => formatCalendarDateKey(new Date()));
@@ -230,154 +75,90 @@ export const DashboardPage = () => {
     };
   }, []);
 
-  const lowStockItems = useMemo(
-    () => buildLowStockItems(activeProducts),
-    [activeProducts]
+  const { sales, stock, retrySales, retryStock } = useDashboardData({ userId, currentDateKey });
+  const salesView = toSourceView(sales);
+  const stockView = toSourceView(stock);
+  const dailySales = sales.data?.dailySales ?? null;
+
+  const metrics = useMemo<DashboardMetric[]>(
+    () => [
+      ...buildSalesMetricCards(dailySales, salesView),
+      ...buildStockMetricCards(stock.data?.totals ?? null, stockView),
+    ],
+    [dailySales, salesView, stock.data, stockView]
   );
 
-  const metrics = useMemo<DashboardMetric[]>(() => {
-    const refDate = parseCustomDate(currentDateKey) ?? new Date();
-    const yesterdayDate = new Date(
-      refDate.getFullYear(),
-      refDate.getMonth(),
-      refDate.getDate() - 1
-    );
-    const yesterdayKey = formatCalendarDateKey(yesterdayDate);
-
-    let todayRevenue = 0;
-    let todaySalesCount = 0;
-    let yesterdayRevenue = 0;
-    let yesterdaySalesCount = 0;
-
-    for (const s of sales) {
-      if (isToday(s.soldAt, currentDateKey)) {
-        todayRevenue += s.totalAmount;
-        todaySalesCount += 1;
-      } else if (isToday(s.soldAt, yesterdayKey)) {
-        yesterdayRevenue += s.totalAmount;
-        yesterdaySalesCount += 1;
-      }
-    }
-
-    const totalActiveStock = activeProducts.reduce(
-      (sum, p) => sum + p.stock,
-      0
-    );
-
-    let revenueTrendText = 'Нет данных за вчера';
-    let revenueTrendType: 'positive' | 'negative' | 'neutral' = 'neutral';
-    if (yesterdayRevenue > 0) {
-      const pct = Math.round(
-        ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
-      );
-      if (pct > 0) {
-        revenueTrendText = `+${pct}% к вчерашнему дню`;
-        revenueTrendType = 'positive';
-      } else if (pct < 0) {
-        revenueTrendText = `${pct}% к вчерашнему дню`;
-        revenueTrendType = 'negative';
-      } else {
-        revenueTrendText = '0% к вчерашнему дню';
-        revenueTrendType = 'neutral';
-      }
-    } else if (todayRevenue > 0) {
-      revenueTrendText = 'Рост с 0 сом вчера';
-      revenueTrendType = 'positive';
-    }
-
-    let salesTrendText = 'Нет данных за вчера';
-    let salesTrendType: 'positive' | 'negative' | 'neutral' = 'neutral';
-    if (yesterdaySalesCount > 0) {
-      const pct = Math.round(
-        ((todaySalesCount - yesterdaySalesCount) / yesterdaySalesCount) * 100
-      );
-      if (pct > 0) {
-        salesTrendText = `+${pct}% к вчерашнему дню`;
-        salesTrendType = 'positive';
-      } else if (pct < 0) {
-        salesTrendText = `${pct}% к вчерашнему дню`;
-        salesTrendType = 'negative';
-      } else {
-        salesTrendText = '0% к вчерашнему дню';
-        salesTrendType = 'neutral';
-      }
-    } else if (todaySalesCount > 0) {
-      salesTrendText = 'Первые чеки за день';
-      salesTrendType = 'positive';
-    }
-
-    return [
-      {
-        id: 'revenue',
-        title: 'Выручка сегодня',
-        value: formatCurrency(todayRevenue),
-        trendText: revenueTrendText,
-        trendType: revenueTrendType,
-        icon: 'revenue',
-      },
-      {
-        id: 'sales',
-        title: 'Продажи сегодня',
-        value: formatNumber(todaySalesCount),
-        trendText: salesTrendText,
-        trendType: salesTrendType,
-        icon: 'sales',
-      },
-      {
-        id: 'warehouse',
-        title: 'Товаров на складе',
-        value: `${formatNumber(totalActiveStock)} шт.`,
-        trendText: `${activeProducts.length} наименований`,
-        trendType: 'positive',
-        icon: 'warehouse',
-      },
-      {
-        id: 'alert',
-        title: 'Заканчиваются',
-        value: String(lowStockItems.length),
-        trendText:
-          lowStockItems.length > 0
-            ? 'Требуется закупка'
-            : 'Все остатки в норме',
-        trendType: lowStockItems.length > 0 ? 'negative' : 'positive',
-        icon: 'alert',
-      },
-    ];
-  }, [sales, activeProducts, lowStockItems.length, currentDateKey]);
-
+  // 7 / 14 / 30 points come from one 30-day series: switching the chart period never refetches
   const revenue7Days = useMemo(
-    () => buildRevenueData(sales, 7, currentDateKey),
-    [sales, currentDateKey]
+    () => (dailySales ? buildRevenueChartPoints(dailySales, 7, currentDateKey) : []),
+    [dailySales, currentDateKey]
   );
   const revenue14Days = useMemo(
-    () => buildRevenueData(sales, 14, currentDateKey),
-    [sales, currentDateKey]
+    () => (dailySales ? buildRevenueChartPoints(dailySales, 14, currentDateKey) : []),
+    [dailySales, currentDateKey]
   );
   const revenue30Days = useMemo(
-    () => buildRevenueData(sales, 30, currentDateKey),
-    [sales, currentDateKey]
+    () => (dailySales ? buildRevenueChartPoints(dailySales, 30, currentDateKey) : []),
+    [dailySales, currentDateKey]
   );
 
   const popularProducts = useMemo(
-    () => buildPopularProducts(sales, products),
-    [sales, products]
+    () => buildPopularProductItems(sales.data?.popularProducts ?? []),
+    [sales.data]
   );
-  const recentSales = useMemo(() => {
-    return [...sales]
-      .sort((a, b) => {
-        const da = parseCustomDate(a.soldAt)?.getTime() ?? 0;
-        const db = parseCustomDate(b.soldAt)?.getTime() ?? 0;
-        if (da !== db) return db - da;
-        const ca = parseCustomDate(a.createdAt)?.getTime() ?? 0;
-        const cb = parseCustomDate(b.createdAt)?.getTime() ?? 0;
-        if (ca !== cb) return cb - ca;
-        return b.id.localeCompare(a.id);
-      })
-      .slice(0, 5);
-  }, [sales]);
+  const recentSales = useMemo(
+    () => buildRecentSaleRows(sales.data?.recentSales ?? []),
+    [sales.data]
+  );
+  const lowStockItems = useMemo(
+    () => buildLowStockItems(stock.data?.lowStockProducts ?? []),
+    [stock.data]
+  );
 
   return (
     <div className={styles.dashboard}>
+      {/* Source errors with independent retry */}
+      {(sales.error || stock.error) && (
+        <div className={styles.statusBanners}>
+          {sales.error && (
+            <div className={styles.errorBanner} role="alert">
+              <div className={styles.errorInfo}>
+                <AlertCircle size={20} />
+                <span className={styles.errorText}>Продажи: {sales.error}</span>
+              </div>
+              <button
+                type="button"
+                data-retry-dashboard-sales-btn
+                className={styles.retryBtn}
+                onClick={retrySales}
+                disabled={sales.isLoading}
+              >
+                <RotateCcw size={14} />
+                <span>{sales.isLoading ? 'Загрузка...' : 'Повторить'}</span>
+              </button>
+            </div>
+          )}
+          {stock.error && (
+            <div className={styles.errorBanner} role="alert">
+              <div className={styles.errorInfo}>
+                <AlertCircle size={20} />
+                <span className={styles.errorText}>Склад: {stock.error}</span>
+              </div>
+              <button
+                type="button"
+                data-retry-dashboard-stock-btn
+                className={styles.retryBtn}
+                onClick={retryStock}
+                disabled={stock.isLoading}
+              >
+                <RotateCcw size={14} />
+                <span>{stock.isLoading ? 'Загрузка...' : 'Повторить'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 4 Metric Cards */}
       <section className={styles.metricsGrid} aria-label="Ключевые показатели">
         {metrics.map((metric) => (
@@ -389,16 +170,21 @@ export const DashboardPage = () => {
       <section
         className={styles.twoColumnGrid}
         aria-label="Выручка и популярные товары"
+        aria-busy={salesView === 'loading'}
       >
         <div className={styles.chartCol}>
-          <RevenueChart
-            data={revenue7Days}
-            data14={revenue14Days}
-            data30={revenue30Days}
-          />
+          {salesView === 'ready' ? (
+            <RevenueChart data={revenue7Days} data14={revenue14Days} data30={revenue30Days} />
+          ) : (
+            <BlockPlaceholder view={salesView} label="Выручка" />
+          )}
         </div>
         <div className={styles.sideCol}>
-          <PopularProducts products={popularProducts} />
+          {salesView === 'ready' ? (
+            <PopularProducts products={popularProducts} periodLabel="за 30 дней" />
+          ) : (
+            <BlockPlaceholder view={salesView} label="Популярные товары" />
+          )}
         </div>
       </section>
 
@@ -406,12 +192,21 @@ export const DashboardPage = () => {
       <section
         className={styles.twoColumnGrid}
         aria-label="Последние продажи и остатки"
+        aria-busy={salesView === 'loading' || stockView === 'loading'}
       >
         <div className={styles.salesCol}>
-          <RecentSales sales={recentSales} />
+          {salesView === 'ready' ? (
+            <RecentSales sales={recentSales} />
+          ) : (
+            <BlockPlaceholder view={salesView} label="Последние продажи" />
+          )}
         </div>
         <div className={styles.sideCol}>
-          <LowStock items={lowStockItems} />
+          {stockView === 'ready' ? (
+            <LowStock items={lowStockItems} />
+          ) : (
+            <BlockPlaceholder view={stockView} label="Остатки" />
+          )}
         </div>
       </section>
     </div>

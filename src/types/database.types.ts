@@ -699,6 +699,18 @@ export type Database = {
         }
         Returns: Json
       }
+      rpc_get_dashboard_sales_summary: {
+        Args: {
+          p_day_bounds: string[]
+          p_popular_limit?: number
+          p_recent_limit?: number
+        }
+        Returns: Json
+      }
+      rpc_get_dashboard_stock_summary: {
+        Args: { p_low_stock_limit?: number }
+        Returns: Json
+      }
       rpc_update_product: {
         Args: {
           p_barcode: string
