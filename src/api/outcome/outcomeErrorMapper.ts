@@ -1,111 +1,24 @@
 import type { MappedOutcomeError, OutcomeErrorKind } from '../../types';
 import { OutcomeValidationError } from './outcomeValidationError';
+import {
+  GATEWAY_STATUSES,
+  classifySupabaseError,
+  isIndeterminateErrorKind,
+  isNetworkTransportError as isSharedNetworkTransportError,
+  isSessionAuthFailure,
+  readErrorSignals,
+} from '../shared/supabaseErrorClassifier';
 
 export type { MappedOutcomeError };
 
-/**
- * Structured view of an error object. Classification relies only on
- * `name`, `code` and `status` — never on free text, because PostgreSQL
- * messages may contain product names and other user data.
- */
-interface ErrorSignals {
-  name: string;
-  code: string;
-  status: number | undefined;
-}
-
-/** Gateway / edge responses: the request may or may not have reached PostgreSQL. */
-const GATEWAY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504, 520, 521, 522, 523, 524]);
-
-/** Transport-level error names and Node/undici-style codes. */
-const TRANSPORT_ERROR_NAMES: ReadonlySet<string> = new Set(['AbortError', 'TimeoutError']);
-const TRANSPORT_ERROR_CODES: ReadonlySet<string> = new Set([
-  'ABORT_ERR',
-  'ECONNREFUSED',
-  'ECONNRESET',
-  'ETIMEDOUT',
-  'ENOTFOUND',
-  'EAI_AGAIN',
-]);
-
-/** PostgREST / PostgreSQL authentication and authorization codes. */
-const AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
-  'PGRST301', // JWT invalid / cannot be decoded
-  'PGRST302', // anonymous access disabled
-  'PGRST303', // JWT expired / claims validation failed
-  '28000', // invalid_authorization_specification (not authenticated)
-  '28P01', // invalid_password
-  '42501', // insufficient_privilege (inactive profile / not admin)
-]);
+export { isAuthFailure } from '../shared/supabaseErrorClassifier';
 
 /**
- * SQLSTATE classes where the transaction outcome cannot be treated as a deterministic refusal:
- * 08 connection exception, 40 transaction rollback, 53 insufficient resources,
- * 57 operator intervention (incl. statement timeout), 58 system error, XX internal error.
+ * Detects an unconfirmed network / transport failure (shared structural classifier).
+ * Client validation errors are never network errors.
  */
-const INDETERMINATE_SQLSTATE_CLASSES: ReadonlySet<string> = new Set(['08', '40', '53', '57', '58', 'XX']);
-
-const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
-const POSTGREST_CODE_PATTERN = /^PGRST\d{3}$/;
-
-const readErrorSignals = (error: unknown): ErrorSignals | null => {
-  if (!error || typeof error !== 'object') return null;
-  const obj = error as { name?: unknown; code?: unknown; status?: unknown };
-  return {
-    name: typeof obj.name === 'string' ? obj.name : '',
-    code: typeof obj.code === 'string' ? obj.code : '',
-    status: typeof obj.status === 'number' ? obj.status : undefined,
-  };
-};
-
-/** True for a PostgreSQL SQLSTATE that means a deterministic, rolled-back refusal. */
-const isDeterministicSqlState = (code: string): boolean => {
-  if (!SQLSTATE_PATTERN.test(code)) return false;
-  if (AUTH_ERROR_CODES.has(code)) return false;
-  return !INDETERMINATE_SQLSTATE_CLASSES.has(code.slice(0, 2));
-};
-
-/**
- * Detects an unconfirmed network / transport failure using structured signals only:
- * AbortError/TimeoutError, fetch TypeError, transport error codes,
- * HTTP status 0 (supabase-js fetch failure), 408, gateway statuses and other 5xx without a domain SQLSTATE.
- */
-export const isNetworkTransportError = (error: unknown): boolean => {
-  if (error instanceof OutcomeValidationError) return false;
-
-  // fetch() rejects with TypeError on DNS / offline / CORS-level failures
-  if (error instanceof TypeError) return true;
-
-  const signals = readErrorSignals(error);
-  if (!signals) return false;
-
-  if (TRANSPORT_ERROR_NAMES.has(signals.name)) return true;
-  if (TRANSPORT_ERROR_CODES.has(signals.code)) return true;
-
-  const { status } = signals;
-  if (status === undefined) return false;
-  if (status === 0 || status === 408 || GATEWAY_STATUSES.has(status)) return true;
-
-  if (status >= 500 && status <= 599) {
-    // A 5xx carrying a deterministic PostgreSQL SQLSTATE is a domain refusal, not a transport failure
-    return !isDeterministicSqlState(signals.code);
-  }
-
-  return false;
-};
-
-/**
- * Detects 401/403, expired/invalid JWT and PostgreSQL privilege errors.
- */
-export const isAuthFailure = (error: unknown): boolean => {
-  const signals = readErrorSignals(error);
-  if (!signals) return false;
-  return (
-    signals.status === 401 ||
-    signals.status === 403 ||
-    AUTH_ERROR_CODES.has(signals.code)
-  );
-};
+export const isNetworkTransportError = (error: unknown): boolean =>
+  !(error instanceof OutcomeValidationError) && isSharedNetworkTransportError(error);
 
 /**
  * Classifies any error into an OutcomeErrorKind.
@@ -113,30 +26,12 @@ export const isAuthFailure = (error: unknown): boolean => {
  */
 export const classifyOutcomeError = (error: unknown): OutcomeErrorKind => {
   if (error instanceof OutcomeValidationError) return 'validation';
-  if (isAuthFailure(error)) return 'auth';
-  if (isNetworkTransportError(error)) return 'network';
-
-  const signals = readErrorSignals(error);
-  if (!signals) return 'internal';
-
-  if (isDeterministicSqlState(signals.code)) return 'domain';
-
-  // PostgREST request errors (e.g. PGRST116, PGRST202) with a 4xx status: request rejected before commit
-  if (
-    POSTGREST_CODE_PATTERN.test(signals.code) &&
-    signals.status !== undefined &&
-    signals.status >= 400 &&
-    signals.status < 500
-  ) {
-    return 'domain';
-  }
-
-  return 'internal';
+  return classifySupabaseError(error);
 };
 
 /** Returns true when the server outcome is unknown and the pending UUID must be preserved. */
 export const isIndeterminateOutcomeError = (error: MappedOutcomeError): boolean =>
-  error.kind === 'network' || error.kind === 'auth' || error.kind === 'internal';
+  isIndeterminateErrorKind(error.kind);
 
 const mapNetworkError = (error: unknown): MappedOutcomeError => {
   const status = readErrorSignals(error)?.status;
@@ -160,15 +55,7 @@ const mapNetworkError = (error: unknown): MappedOutcomeError => {
 };
 
 const mapAuthError = (error: unknown): MappedOutcomeError => {
-  const signals = readErrorSignals(error);
-  const isSessionProblem =
-    signals?.status === 401 ||
-    signals?.code === 'PGRST301' ||
-    signals?.code === 'PGRST302' ||
-    signals?.code === 'PGRST303' ||
-    signals?.code === '28000';
-
-  if (isSessionProblem) {
+  if (isSessionAuthFailure(error)) {
     return {
       kind: 'auth',
       message: 'Сессия истекла или требуется повторная авторизация. Пожалуйста, выполните вход заново.',

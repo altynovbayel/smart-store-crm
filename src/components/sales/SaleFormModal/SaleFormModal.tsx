@@ -1,235 +1,203 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { X, Plus, AlertCircle, ShoppingCart } from 'lucide-react';
 import type {
   Product,
-  SaleFormData,
   SaleFormItemState,
   PaymentMethod,
   DiscountType,
+  SaleSubmitPayload,
+  SaleSubmitResult,
+  PendingSaleOperation,
 } from '../../../types';
-import { PAYMENT_METHODS } from '../../../types';
-import { getCurrentLocalDatetime } from '../../../utils/dateUtils';
-import { formatCurrency, formatNumber } from '../../../utils/formatUtils';
-import { restoreFocusWithFallback } from '../../../utils/focusUtils';
-import {
-  calculateSaleTotals,
-  validateSaleForm,
-  processBarcodeScan,
-} from '../../../utils/saleCalculations';
+import { getCurrentLocalDatetime, formatToLocalDatetime } from '../../../utils/dateUtils';
+import { calculateSaleTotals, validateSaleForm } from '../../../utils/saleCalculations';
+import { isIndeterminateSaleError } from '../../../api/sales';
 import { SaleFormItemRow } from './SaleFormItemRow';
 import { BarcodeScannerField } from './BarcodeScannerField';
+import { SaleFormFields } from './SaleFormFields';
+import { SalePaymentSection } from './SalePaymentSection';
+import { SaleReceiptDiscountSection } from './SaleReceiptDiscountSection';
+import { SaleSummary } from './SaleSummary';
+import { useSaleModalA11y } from './useSaleModalA11y';
+import { useSaleHistoricalPrices } from './useSaleHistoricalPrices';
+import { useSaleBarcodeScanner } from './useSaleBarcodeScanner';
+import { useSaleIdempotency } from './useSaleIdempotency';
 import styles from './SaleFormModal.module.scss';
 
 export interface SaleFormModalProps {
   isOpen: boolean;
   activeProducts: Product[];
-  allProducts?: Product[];
+  initialResponsiblePerson?: string;
+  pendingOperation?: PendingSaleOperation | null;
   onClose: () => void;
-  onSubmit: (data: SaleFormData) => { success: boolean; error?: string };
+  onSubmit: (data: SaleSubmitPayload) => Promise<SaleSubmitResult>;
+  /** Reloads the active catalog (stock / availability may be stale). */
+  onRefreshCatalog?: () => void;
 }
+
+const createEmptyRow = (id: string): SaleFormItemState => ({
+  id,
+  productId: '',
+  rawQuantity: '1',
+  rawUnitPrice: '0',
+  discountType: 'fixed',
+  rawDiscountValue: '',
+});
+
+const formatOptionalAmount = (value: number): string => (value > 0 ? String(value) : '');
 
 export const SaleFormModal = ({
   isOpen,
   activeProducts,
-  allProducts,
+  initialResponsiblePerson,
+  pendingOperation,
   onClose,
   onSubmit,
+  onRefreshCatalog,
 }: SaleFormModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const barcodeInputRef = useRef<HTMLInputElement | null>(null);
+  const restored = pendingOperation?.payload;
 
-  const [barcode, setBarcode] = useState('');
-  const [barcodeError, setBarcodeError] = useState<string | null>(null);
-  const [barcodeSuccess, setBarcodeSuccess] = useState<string | null>(null);
+  const { isIndeterminate, isRetrySubmission, prepareSubmission, completeSubmission } =
+    useSaleIdempotency(pendingOperation);
 
-  const [soldAt, setSoldAt] = useState(() => getCurrentLocalDatetime());
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
-  const [rawReceivedAmount, setRawReceivedAmount] = useState('');
-  const [responsiblePerson, setResponsiblePerson] = useState('Кассир-продавец');
-  const [comment, setComment] = useState('');
-  const [receiptDiscountType, setReceiptDiscountType] = useState<DiscountType>('fixed');
-  const [rawReceiptDiscountValue, setRawReceiptDiscountValue] = useState('');
+  const [soldAt, setSoldAt] = useState(() =>
+    restored ? formatToLocalDatetime(restored.soldAt) : getCurrentLocalDatetime()
+  );
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    () => restored?.paymentMethod ?? 'cash'
+  );
+  const [rawReceivedAmount, setRawReceivedAmount] = useState(() =>
+    restored?.receivedAmount !== undefined ? String(restored.receivedAmount) : ''
+  );
+  const responsiblePerson = initialResponsiblePerson?.trim() || 'Сотрудник';
+  const [comment, setComment] = useState(() => restored?.comment ?? '');
+  const [receiptDiscountType, setReceiptDiscountType] = useState<DiscountType>(
+    () => restored?.receiptDiscountType ?? 'fixed'
+  );
+  const [rawReceiptDiscountValue, setRawReceiptDiscountValue] = useState(() =>
+    restored ? formatOptionalAmount(restored.receiptDiscountValue) : ''
+  );
 
-  // Initial single empty item
-  const [items, setItems] = useState<SaleFormItemState[]>([
-    {
-      id: 'row-1',
-      productId: '',
-      rawQuantity: '1',
-      rawUnitPrice: '0',
-      discountType: 'fixed',
-      rawDiscountValue: '',
-    },
-  ]);
+  const [items, setItems] = useState<SaleFormItemState[]>(() => {
+    if (restored && restored.items.length > 0) {
+      return restored.items.map((it, idx) => ({
+        id: `pending-row-${idx + 1}`,
+        productId: it.productId,
+        rawQuantity: String(it.quantity),
+        rawUnitPrice: String(it.unitPrice),
+        discountType: it.discountType,
+        rawDiscountValue: formatOptionalAmount(it.discountValue),
+      }));
+    }
+    return [createEmptyRow('row-1')];
+  });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>(() => {
+    const initialErrors: Record<string, string> = {};
+    if (pendingOperation) {
+      initialErrors.general =
+        'Предыдущая отправка этого чека завершилась ошибкой сети. Нажмите «Повторить отправку», чтобы безопасно завершить проведение с исходным ключом.';
+    }
+    return initialErrors;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
 
-  // Focus trap, Escape listener, background scroll lock, cleanup focus restoration
+  // Cancel pending focus frames on close/unmount
   useEffect(() => {
     if (!isOpen) return;
-
-    if (document.activeElement instanceof HTMLElement) {
-      previousFocusRef.current = document.activeElement;
-    }
-
-    document.body.classList.add('drawer-open');
-
-    // Focus barcode scanner input initially if focus is not already inside the modal
-    const isFocusInside = modalRef.current?.contains(document.activeElement);
-    if (!isFocusInside) {
-      const barcodeInput = modalRef.current?.querySelector<HTMLInputElement>(
-        '#sale-barcode-scanner'
-      );
-      if (barcodeInput) {
-        barcodeInput.focus();
-      } else {
-        const soldAtInput = modalRef.current?.querySelector<HTMLInputElement>(
-          '#sale-sold-at'
-        );
-        soldAtInput?.focus();
-      }
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
-
-      if (e.key === 'Tab' && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        // If focus escaped the dialog container, pull it back in
-        if (!modalRef.current.contains(document.activeElement)) {
-          e.preventDefault();
-          first.focus();
-          return;
-        }
-
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-
     return () => {
-      document.body.classList.remove('drawer-open');
-      window.removeEventListener('keydown', handleKeyDown);
-      if (rafRef.current) {
+      if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
-      restoreFocusWithFallback(
-        previousFocusRef.current,
-        '[data-add-sale-btn]'
-      );
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
-  // Computed live totals
-  const liveTotals = calculateSaleTotals(
+  useSaleModalA11y({ isOpen, modalRef, isSubmittingRef, onClose });
+
+  /**
+   * Selling prices are read-only and always come from the current catalog, so a catalog reload
+   * updates every row. While a previous submission is indeterminate the confirmed (sent) prices
+   * are kept, because the retry must reuse the exact same payload.
+   */
+  const effectiveItems = useMemo(
+    () =>
+      isIndeterminate
+        ? items
+        : items.map((it) => {
+            const product = activeProducts.find((p) => p.id === it.productId);
+            return product ? { ...it, rawUnitPrice: String(product.sellingPrice) } : it;
+          }),
+    [items, activeProducts, isIndeterminate]
+  );
+
+  const { historicalPrices } = useSaleHistoricalPrices({
+    isOpen,
+    soldAt,
+    items: effectiveItems,
+    activeProducts,
+  });
+
+  const runValidation = (itemsToValidate: SaleFormItemState[], isRetrySubmission: boolean) =>
+    validateSaleForm(
+      soldAt,
+      paymentMethod,
+      rawReceivedAmount,
+      responsiblePerson,
+      comment,
+      receiptDiscountType,
+      rawReceiptDiscountValue,
+      itemsToValidate,
+      activeProducts,
+      historicalPrices,
+      isRetrySubmission
+    );
+
+  const scanner = useSaleBarcodeScanner({
+    isOpen,
+    activeProducts,
     items,
+    isSubmittingRef,
+    onItemsScanned: (newItems) => {
+      setItems(newItems);
+      // Re-validate and update form errors if errors were previously active
+      setErrors((prevErrors) =>
+        Object.keys(prevErrors).length === 0 ? prevErrors : runValidation(newItems, false).errors
+      );
+    },
+  });
+
+  if (!isOpen) return null;
+
+  const scheduleFocus = (focusFn: () => void) => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      focusFn();
+    });
+  };
+
+  // Computed live totals (preview; the server recalculates every amount)
+  const liveTotals = calculateSaleTotals(
+    effectiveItems,
     activeProducts,
     receiptDiscountType,
     rawReceiptDiscountValue,
     paymentMethod,
     rawReceivedAmount,
-    soldAt
+    soldAt,
+    historicalPrices
   );
 
-  // Barcode scanner handling
-  const handleBarcodeChange = (val: string) => {
-    setBarcode(val);
-    if (barcodeError) {
-      setBarcodeError(null);
-    }
-  };
-
-  const handleBarcodeScan = (scannedValue: string) => {
-    const trimmed = scannedValue.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    const catalog = allProducts ?? activeProducts;
-    const res = processBarcodeScan(trimmed, catalog, items);
-
-    if (res.success && res.updatedItems) {
-      const newItems = res.updatedItems;
-      setItems(newItems);
-      setBarcode('');
-      setBarcodeError(null);
-      setBarcodeSuccess(res.message ?? 'Товар добавлен в чек');
-
-      // Re-validate and update form errors if errors were previously active
-      setErrors((prevErrors) => {
-        if (Object.keys(prevErrors).length === 0) return prevErrors;
-        const valResult = validateSaleForm(
-          soldAt,
-          paymentMethod,
-          rawReceivedAmount,
-          responsiblePerson,
-          comment,
-          receiptDiscountType,
-          rawReceiptDiscountValue,
-          newItems,
-          activeProducts
-        );
-        return valResult.errors;
-      });
-
-      // Retain focus in barcode scanner input
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        barcodeInputRef.current?.focus();
-      });
-    } else if (!res.success && res.error) {
-      setBarcodeError(res.error);
-      setBarcodeSuccess(null);
-
-      // Retain focus and select input text for quick rescan
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        if (barcodeInputRef.current && document.contains(barcodeInputRef.current)) {
-          barcodeInputRef.current.focus();
-          barcodeInputRef.current.select();
-        }
-      });
-    }
-  };
-
-  // Add line item
   const handleAddItem = () => {
     setItems((prev) => [
       ...prev,
-      {
-        id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        productId: '',
-        rawQuantity: '1',
-        rawUnitPrice: '0',
-        discountType: 'fixed',
-        rawDiscountValue: '',
-      },
+      createEmptyRow(`row-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`),
     ]);
   };
 
@@ -238,103 +206,106 @@ export const SaleFormModal = ({
     if (items.length <= 1) return;
     setItems((prev) => prev.filter((it) => it.id !== id));
 
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-    }
-
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
+    scheduleFocus(() => {
       if (!modalRef.current) return;
-      const addItemBtn = modalRef.current.querySelector<HTMLElement>(
-        `.${styles.addItemBtn}`
-      );
+      const addItemBtn = modalRef.current.querySelector<HTMLElement>(`.${styles.addItemBtn}`);
       if (addItemBtn && document.contains(addItemBtn)) {
         addItemBtn.focus();
       }
     });
   };
 
-  // Update item fields
   const handleItemProductChange = (rowId: string, newProductId: string) => {
     const targetProd = activeProducts.find((p) => p.id === newProductId);
     setItems((prev) =>
-      prev.map((it) => {
-        if (it.id !== rowId) return it;
-        return {
-          ...it,
-          productId: newProductId,
-          rawUnitPrice: targetProd ? String(targetProd.sellingPrice) : it.rawUnitPrice,
-        };
-      })
+      prev.map((it) =>
+        it.id === rowId
+          ? {
+              ...it,
+              productId: newProductId,
+              rawUnitPrice: targetProd ? String(targetProd.sellingPrice) : it.rawUnitPrice,
+            }
+          : it
+      )
     );
   };
 
   const handleItemQuantityChange = (rowId: string, val: string) => {
-    setItems((prev) =>
-      prev.map((it) => (it.id === rowId ? { ...it, rawQuantity: val } : it))
-    );
-  };
-
-  const handleItemUnitPriceChange = (rowId: string, val: string) => {
-    setItems((prev) =>
-      prev.map((it) => (it.id === rowId ? { ...it, rawUnitPrice: val } : it))
-    );
+    setItems((prev) => prev.map((it) => (it.id === rowId ? { ...it, rawQuantity: val } : it)));
   };
 
   const handleItemDiscountTypeChange = (rowId: string, type: DiscountType) => {
-    setItems((prev) =>
-      prev.map((it) => (it.id === rowId ? { ...it, discountType: type } : it))
-    );
+    setItems((prev) => prev.map((it) => (it.id === rowId ? { ...it, discountType: type } : it)));
   };
 
   const handleItemDiscountValueChange = (rowId: string, val: string) => {
-    setItems((prev) =>
-      prev.map((it) => (it.id === rowId ? { ...it, rawDiscountValue: val } : it))
-    );
+    setItems((prev) => prev.map((it) => (it.id === rowId ? { ...it, rawDiscountValue: val } : it)));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const showGeneralError = (message: string) => {
+    setErrors((prev) => ({ ...prev, general: message }));
+    scheduleFocus(() => {
+      modalRef.current?.querySelector<HTMLElement>(`.${styles.errorBanner}`)?.focus();
+    });
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    // Ref guard: a double click in the same tick can never create a second receipt
+    if (isSubmittingRef.current) return;
 
-    const result = validateSaleForm(
-      soldAt,
-      paymentMethod,
-      rawReceivedAmount,
-      responsiblePerson,
-      comment,
-      receiptDiscountType,
-      rawReceiptDiscountValue,
-      items,
-      activeProducts
-    );
+    const result = runValidation(effectiveItems, isRetrySubmission());
 
-    if (result.isValid && result.data) {
-      setIsSubmitting(true);
-      const res = onSubmit(result.data);
-      if (res.success) {
-        onClose();
-      } else {
-        setErrors({ general: res.error || 'Ошибка при сохранении продажи' });
-        setIsSubmitting(false);
-      }
-    } else {
+    if (!result.isValid || !result.data) {
       setErrors(result.errors);
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
+      // Stock / availability errors may come from a stale catalog: reload it, the rows update in place
+      if (Object.keys(result.errors).some((key) => /^item-.+-(qty|product)$/.test(key))) {
+        onRefreshCatalog?.();
       }
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        if (!modalRef.current) return;
-        const firstInvalid = modalRef.current.querySelector<HTMLElement>(
-          '[aria-invalid="true"]'
-        );
-        firstInvalid?.focus();
+      scheduleFocus(() => {
+        modalRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
       });
+      return;
     }
-  };
 
-  if (!isOpen) return null;
+    const prepared = prepareSubmission(result.data);
+    if (!prepared.ok) {
+      showGeneralError(prepared.message);
+      return;
+    }
+
+    // Commit the exact rows being sent (incl. confirmed catalog prices) into form state, so an
+    // indeterminate outcome keeps showing — and can only re-send — this very payload
+    setItems(effectiveItems);
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
+    let res: SaleSubmitResult;
+    try {
+      res = await onSubmit({ ...result.data, id: prepared.key });
+    } catch {
+      // Unexpected failure: the request may have been sent, keep the key and payload locked
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      completeSubmission('indeterminate');
+      showGeneralError(
+        'Произошла непредвиденная ошибка при проведении продажи. Результат не подтверждён — повторите отправку с теми же данными.'
+      );
+      return;
+    }
+
+    if (res.success) {
+      // Form data is discarded only after the server confirmed the receipt
+      completeSubmission('success');
+      onClose();
+      return;
+    }
+
+    isSubmittingRef.current = false;
+    setIsSubmitting(false);
+    completeSubmission(isIndeterminateSaleError(res.error) ? 'indeterminate' : 'deterministic');
+    showGeneralError(res.error.message || 'Ошибка при проведении продажи');
+  };
 
   return (
     <div
@@ -363,6 +334,7 @@ export const SaleFormModal = ({
             type="button"
             className={styles.closeBtn}
             onClick={onClose}
+            disabled={isSubmitting}
             aria-label="Закрыть окно оформления продажи"
           >
             <X size={20} />
@@ -374,7 +346,7 @@ export const SaleFormModal = ({
           <div className={styles.modalBody}>
             {/* General errors banner */}
             {errors.general && (
-              <div className={styles.errorBanner} role="alert">
+              <div className={styles.errorBanner} role="alert" tabIndex={-1}>
                 <AlertCircle size={16} />
                 <span>{errors.general}</span>
               </div>
@@ -386,167 +358,73 @@ export const SaleFormModal = ({
               </div>
             )}
 
-            {/* Top row: Date, Responsible employee */}
-            <div className={styles.fieldGrid}>
-              <div className={styles.formGroup}>
-                <label htmlFor="sale-sold-at" className={styles.label}>
-                  Дата и время продажи <span className={styles.requiredStar}>*</span>
-                </label>
-                <input
-                  id="sale-sold-at"
-                  type="datetime-local"
-                  step="1"
-                  className={styles.input}
-                  value={soldAt}
-                  onChange={(e) => setSoldAt(e.target.value)}
-                  aria-invalid={errors.soldAt ? 'true' : undefined}
-                  aria-describedby={errors.soldAt ? 'sale-sold-at-err' : undefined}
-                />
-                {errors.soldAt && (
-                  <span id="sale-sold-at-err" className={styles.errorText} role="alert">
-                    {errors.soldAt}
-                  </span>
-                )}
-              </div>
+            {/* Top row: Date, Responsible employee, Comment */}
+            <SaleFormFields
+              soldAt={soldAt}
+              responsiblePerson={responsiblePerson}
+              comment={comment}
+              errors={errors}
+              disabled={isSubmitting}
+              onSoldAtChange={setSoldAt}
+              onCommentChange={setComment}
+            />
 
-              <div className={styles.formGroup}>
-                <label htmlFor="sale-responsible" className={styles.label}>
-                  Ответственный <span className={styles.requiredStar}>*</span>
-                </label>
-                <input
-                  id="sale-responsible"
-                  type="text"
-                  className={styles.input}
-                  placeholder="Имя сотрудника"
-                  value={responsiblePerson}
-                  onChange={(e) => setResponsiblePerson(e.target.value)}
-                  aria-invalid={errors.responsiblePerson ? 'true' : undefined}
-                  aria-describedby={errors.responsiblePerson ? 'sale-resp-err' : undefined}
-                />
-                {errors.responsiblePerson && (
-                  <span id="sale-resp-err" className={styles.errorText} role="alert">
-                    {errors.responsiblePerson}
-                  </span>
-                )}
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="sale-comment" className={styles.label}>
-                  Комментарий к чеку
-                </label>
-                <input
-                  id="sale-comment"
-                  type="text"
-                  className={styles.input}
-                  placeholder="Примечание (необязательно)"
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Payment Method Selector */}
-            <div className={styles.formGroup}>
-              <label htmlFor="sale-payment-method" className={styles.label}>
-                Способ оплаты <span className={styles.requiredStar}>*</span>
-              </label>
-              <select
-                id="sale-payment-method"
-                className={styles.select}
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-              >
-                {(Object.keys(PAYMENT_METHODS) as PaymentMethod[]).map((pm) => (
-                  <option key={pm} value={pm}>
-                    {PAYMENT_METHODS[pm]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Cash Payment Specific Fields */}
-            {paymentMethod === 'cash' && (
-              <div className={styles.cashPaymentBox}>
-                <div className={styles.cashInputGroup}>
-                  <div className={styles.formGroup}>
-                    <label htmlFor="sale-cash-received" className={styles.label}>
-                      Получено от покупателя (сом) <span className={styles.requiredStar}>*</span>
-                    </label>
-                    <input
-                      id="sale-cash-received"
-                      type="text"
-                      inputMode="decimal"
-                      className={styles.input}
-                      placeholder={String(liveTotals.totalAmount)}
-                      value={rawReceivedAmount}
-                      onChange={(e) => setRawReceivedAmount(e.target.value)}
-                      aria-invalid={errors.receivedAmount ? 'true' : undefined}
-                      aria-describedby={errors.receivedAmount ? 'sale-received-err' : undefined}
-                    />
-                    {errors.receivedAmount && (
-                      <span id="sale-received-err" className={styles.errorText} role="alert">
-                        {errors.receivedAmount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className={styles.cashChangeDisplay}>
-                  <span className={styles.changeLabel}>Сдача к выдаче</span>
-                  <span className={styles.changeValue}>
-                    {formatCurrency(liveTotals.changeAmount)}
-                  </span>
-                </div>
-              </div>
-            )}
+            {/* Payment Method and Cash */}
+            <SalePaymentSection
+              paymentMethod={paymentMethod}
+              rawReceivedAmount={rawReceivedAmount}
+              totalAmount={liveTotals.totalAmount}
+              changeAmount={liveTotals.changeAmount}
+              errors={errors}
+              disabled={isSubmitting}
+              onPaymentMethodChange={setPaymentMethod}
+              onReceivedAmountChange={setRawReceivedAmount}
+            />
 
             {/* Barcode Scanner Section */}
             <BarcodeScannerField
-              value={barcode}
-              onChange={handleBarcodeChange}
-              onScan={handleBarcodeScan}
-              error={barcodeError}
-              successMessage={barcodeSuccess}
-              inputRef={barcodeInputRef}
+              value={scanner.barcode}
+              onChange={scanner.handleBarcodeChange}
+              onScan={scanner.handleBarcodeScan}
+              error={scanner.barcodeError}
+              successMessage={scanner.barcodeSuccess}
+              inputRef={scanner.barcodeInputRef}
+              disabled={isSubmitting}
             />
 
             {/* Items Table Section */}
             <div>
               <div className={styles.sectionHeader}>
-                <h3 className={styles.sectionTitle}>
-                  Товары в чеке ({items.length})
-                </h3>
+                <h3 className={styles.sectionTitle}>Товары в чеке ({items.length})</h3>
               </div>
 
               <div className={styles.itemsContainer}>
-                {items.map((item, index) => {
-                  const selProd = activeProducts.find((p) => p.id === item.productId);
-                  return (
-                    <SaleFormItemRow
-                      key={item.id}
-                      index={index}
-                      item={item}
-                      soldAt={soldAt}
-                      activeProducts={activeProducts}
-                      selectedProduct={selProd}
-                      allItems={items}
-                      errors={errors}
-                      isOnlyRow={items.length === 1}
-                      onProductChange={handleItemProductChange}
-                      onQuantityChange={handleItemQuantityChange}
-                      onUnitPriceChange={handleItemUnitPriceChange}
-                      onDiscountTypeChange={handleItemDiscountTypeChange}
-                      onDiscountValueChange={handleItemDiscountValueChange}
-                      onRemove={handleRemoveItem}
-                    />
-                  );
-                })}
+                {effectiveItems.map((item, index) => (
+                  <SaleFormItemRow
+                    key={item.id}
+                    index={index}
+                    item={item}
+                    activeProducts={activeProducts}
+                    selectedProduct={activeProducts.find((p) => p.id === item.productId)}
+                    allItems={effectiveItems}
+                    errors={errors}
+                    isOnlyRow={items.length === 1}
+                    disabled={isSubmitting}
+                    historicalPrice={item.productId ? historicalPrices[item.productId] : undefined}
+                    onProductChange={handleItemProductChange}
+                    onQuantityChange={handleItemQuantityChange}
+                    onDiscountTypeChange={handleItemDiscountTypeChange}
+                    onDiscountValueChange={handleItemDiscountValueChange}
+                    onRemove={handleRemoveItem}
+                  />
+                ))}
               </div>
 
               <button
                 type="button"
                 className={styles.addItemBtn}
                 onClick={handleAddItem}
+                disabled={isSubmitting}
               >
                 <Plus size={14} />
                 <span>Добавить товар</span>
@@ -554,103 +432,17 @@ export const SaleFormModal = ({
             </div>
 
             {/* Receipt Discount Section */}
-            <div className={styles.discountSection}>
-              <div className={styles.sectionTitle}>Скидка на чек (общая)</div>
-              <div className={styles.fieldGrid}>
-                <div className={styles.formGroup}>
-                  <label htmlFor="sale-receipt-discount-type" className={styles.label}>
-                    Тип скидки
-                  </label>
-                  <select
-                    id="sale-receipt-discount-type"
-                    className={styles.select}
-                    value={receiptDiscountType}
-                    onChange={(e) =>
-                      setReceiptDiscountType(e.target.value as DiscountType)
-                    }
-                  >
-                    <option value="fixed">Фиксированная (сом)</option>
-                    <option value="percent">Процентная (%)</option>
-                  </select>
-                </div>
-
-                <div className={styles.formGroup}>
-                  <label htmlFor="sale-receipt-discount-val" className={styles.label}>
-                    Размер скидки на чек
-                  </label>
-                  <input
-                    id="sale-receipt-discount-val"
-                    type="text"
-                    inputMode="decimal"
-                    className={styles.input}
-                    placeholder="0"
-                    value={rawReceiptDiscountValue}
-                    onChange={(e) => setRawReceiptDiscountValue(e.target.value)}
-                    aria-invalid={errors.receiptDiscount ? 'true' : undefined}
-                    aria-describedby={
-                      errors.receiptDiscount ? 'sale-receipt-discount-err' : undefined
-                    }
-                  />
-                  {errors.receiptDiscount && (
-                    <span
-                      id="sale-receipt-discount-err"
-                      className={styles.errorText}
-                      role="alert"
-                    >
-                      {errors.receiptDiscount}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
+            <SaleReceiptDiscountSection
+              discountType={receiptDiscountType}
+              rawDiscountValue={rawReceiptDiscountValue}
+              error={errors.receiptDiscount}
+              disabled={isSubmitting}
+              onDiscountTypeChange={setReceiptDiscountType}
+              onDiscountValueChange={setRawReceiptDiscountValue}
+            />
 
             {/* Summary Box */}
-            <div className={styles.summaryBox}>
-              <div className={styles.summaryRow}>
-                <span>Всего позиций / единиц:</span>
-                <span>
-                  {items.length} поз. / {formatNumber(liveTotals.totalUnits)} шт.
-                </span>
-              </div>
-              <div className={styles.summaryRow}>
-                <span>Сумма без скидок:</span>
-                <span>{formatCurrency(liveTotals.subtotal)}</span>
-              </div>
-              {liveTotals.itemDiscountTotal > 0 && (
-                <div className={styles.summaryRow}>
-                  <span>Скидки по позициям:</span>
-                  <span style={{ color: '#dc2626' }}>
-                    -{formatCurrency(liveTotals.itemDiscountTotal)}
-                  </span>
-                </div>
-              )}
-              {liveTotals.receiptDiscountAmount > 0 && (
-                <div className={styles.summaryRow}>
-                  <span>Скидка на чек:</span>
-                  <span style={{ color: '#dc2626' }}>
-                    -{formatCurrency(liveTotals.receiptDiscountAmount)}
-                  </span>
-                </div>
-              )}
-              <div className={styles.summaryTotalRow}>
-                <span>Итого к оплате:</span>
-                <span className={styles.totalHighlight}>
-                  {liveTotals.isOverflow
-                    ? 'Превышен предел сумм'
-                    : formatCurrency(liveTotals.totalAmount)}
-                </span>
-              </div>
-              {liveTotals.isOverflow && !errors.totalAmount && (
-                <span className={styles.errorText} role="alert">
-                  Сумма чека или себестоимости превышает допустимый математический предел
-                </span>
-              )}
-              {errors.totalAmount && (
-                <span className={styles.errorText} role="alert">
-                  {errors.totalAmount}
-                </span>
-              )}
-            </div>
+            <SaleSummary itemsCount={items.length} totals={liveTotals} totalError={errors.totalAmount} />
           </div>
 
           {/* Footer */}
@@ -663,12 +455,12 @@ export const SaleFormModal = ({
             >
               Отмена
             </button>
-            <button
-              type="submit"
-              className={styles.submitBtn}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Проведение...' : 'Провести продажу'}
+            <button type="submit" className={styles.submitBtn} disabled={isSubmitting}>
+              {isSubmitting
+                ? 'Проведение...'
+                : isIndeterminate
+                  ? 'Повторить отправку'
+                  : 'Провести продажу'}
             </button>
           </div>
         </form>

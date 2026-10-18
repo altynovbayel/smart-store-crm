@@ -8,3 +8,4 @@ export * from './salesHistory';
 export * from './reports';
 export type * from './auth';
 export type * from './database.types';
+export type * from './apiError';

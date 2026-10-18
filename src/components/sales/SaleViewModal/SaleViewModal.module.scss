@@ -317,3 +317,12 @@
     outline: 2px solid $color-primary;
   }
 }
+
+.netAmountHint {
+  display: block;
+  margin-top: 2px;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-regular;
+  color: $color-text-secondary;
+  white-space: nowrap;
+}

@@ -232,6 +232,15 @@ export const SaleViewModal = ({
                       </td>
                       <td className={styles.tdRight}>
                         <strong>{formatCurrency(item.finalAmount)}</strong>
+                        {/* Server receipts: amount actually paid after the allocated receipt discount */}
+                        {item.netAmount !== undefined &&
+                          item.receiptDiscountAllocated !== undefined &&
+                          item.receiptDiscountAllocated > 0 && (
+                            <span className={styles.netAmountHint}>
+                              Оплачено: {formatCurrency(item.netAmount)} (скидка чека −
+                              {formatCurrency(item.receiptDiscountAllocated)})
+                            </span>
+                          )}
                       </td>
                     </tr>
                   ))}

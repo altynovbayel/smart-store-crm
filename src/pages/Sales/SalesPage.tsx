@@ -1,168 +1,135 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Plus, CheckCircle2, X } from 'lucide-react';
-import type {
-  SaleFilters,
-  Sale,
-  SaleFormData,
-  SaleSummary,
-} from '../../types';
-import { useInventory } from '../../context';
-import { isToday, isWithinDays, parseCustomDate, formatCalendarDateKey } from '../../utils/dateUtils';
-import { restoreFocusWithFallback } from '../../utils/focusUtils';
-import { toCents, fromCents } from '../../utils/incomeCalculations';
+import { Plus, CheckCircle2, X, AlertCircle, RotateCcw } from 'lucide-react';
+import type { SaleFilters, Sale, SaleSummary } from '../../types';
+import { useAuth } from '../../context';
+import { calculateSalesSummaryStats, filterSales } from '../../utils/salesPageUtils';
 import {
   SalesStats,
   SalesToolbar,
   SalesTable,
   SaleFormModal,
   SaleViewModal,
+  SalePendingBanner,
 } from '../../components/sales';
 import { Pagination } from '../../components/warehouse/Pagination/Pagination';
+import { useSalesDateKey } from './hooks/useSalesDateKey';
+import { useSalesNotification } from './hooks/useSalesNotification';
+import { usePendingSale } from './hooks/usePendingSale';
+import { useSalesData } from './hooks/useSalesData';
+import { useSaleSubmission } from './hooks/useSaleSubmission';
 import styles from './SalesPage.module.scss';
 
+const DEFAULT_FILTERS: SaleFilters = {
+  searchQuery: '',
+  period: 'all',
+  paymentMethod: 'all',
+};
+
+const PAGE_SIZE = 8;
+
+/**
+ * SalesPage works directly with Supabase (sales, sale_items, products) — InventoryContext is not used.
+ * - Sales are conducted only through the transactional RPC rpc_create_sale (idempotent by UUID).
+ * - Available to active admins and cashiers (route guard + server get_active_profile(false)).
+ */
 export const SalesPage = () => {
-  const { sales, activeProducts, products, addSale } = useInventory();
+  const { user, profile } = useAuth();
+  const userId = user?.id ?? null;
 
-  // Filters state
-  const [filters, setFilters] = useState<SaleFilters>({
-    searchQuery: '',
-    period: 'all',
-    paymentMethod: 'all',
-  });
-
-  // Pagination state
+  // Filters & pagination state
+  const [filters, setFilters] = useState<SaleFilters>(DEFAULT_FILTERS);
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 8;
+  const pageSize = PAGE_SIZE;
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [saleToView, setSaleToView] = useState<Sale | null>(null);
+  const isCreateModalOpenRef = useRef<boolean>(isCreateModalOpen);
+  const saleToViewRef = useRef<Sale | null>(saleToView);
+  useEffect(() => {
+    isCreateModalOpenRef.current = isCreateModalOpen;
+  }, [isCreateModalOpen]);
+  useEffect(() => {
+    saleToViewRef.current = saleToView;
+  }, [saleToView]);
 
-  // Notification state and focus management
-  const [notification, setNotification] = useState<string | null>(null);
-  const [isToastFocused, setIsToastFocused] = useState(false);
-  const toastRef = useRef<HTMLDivElement>(null);
+  const isAnyModalOpen = useCallback(
+    () => isCreateModalOpenRef.current || Boolean(saleToViewRef.current),
+    []
+  );
+
+  // Close modals on user switch or logout
+  const [prevUserId, setPrevUserId] = useState<string | null>(userId);
+  if (prevUserId !== userId) {
+    setPrevUserId(userId);
+    setIsCreateModalOpen(false);
+    setSaleToView(null);
+  }
+
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Keep track of current calendar date (YYYY-MM-DD) to refresh date-dependent calculations across midnight/tab focus
-  const [currentDateKey, setCurrentDateKey] = useState(() => formatCalendarDateKey(new Date()));
+  const currentDateKey = useSalesDateKey();
+  const { notification, notify, dismissNotification, toastRef, setIsToastFocused } =
+    useSalesNotification(userId, previousFocusRef);
 
-  useEffect(() => {
-    const updateDate = () => {
-      const newKey = formatCalendarDateKey(new Date());
-      setCurrentDateKey((prev) => (prev !== newKey ? newKey : prev));
-    };
+  const { pendingOperation, persistPending, clearPending, confirmPendingFromSales } =
+    usePendingSale(userId);
 
-    const handleFocus = () => updateDate();
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleFocus);
-    const interval = setInterval(updateDate, 30_000);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleFocus);
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Dismiss notification handler with focus return
-  const handleDismissNotification = useCallback(() => {
-    if (toastRef.current?.contains(document.activeElement)) {
-      restoreFocusWithFallback(
-        previousFocusRef.current,
-        '[data-add-sale-btn]'
+  // If the pending sale is found among loaded receipts, it was committed on the server
+  const handleSalesLoaded = useCallback(
+    (loadedSales: Sale[]): boolean => {
+      const confirmed = confirmPendingFromSales(loadedSales);
+      if (!confirmed) return false;
+      const receipt = loadedSales.find((s) => s.id === confirmed.id);
+      notify(
+        receipt
+          ? `Чек № ${receipt.receiptNumber} успешно проведён и подтверждён на сервере.`
+          : 'Неподтверждённая продажа успешно проведена и подтверждена на сервере.'
       );
-    }
-    setNotification(null);
-  }, []);
-
-  // Auto-dismiss notification after 6 seconds, pausing if focus is inside toast
-  useEffect(() => {
-    if (!notification || isToastFocused) return;
-    const timer = setTimeout(() => {
-      if (toastRef.current?.contains(document.activeElement)) {
-        restoreFocusWithFallback(
-          previousFocusRef.current,
-          '[data-add-sale-btn]'
-        );
-      }
-      setNotification(null);
-    }, 6000);
-    return () => clearTimeout(timer);
-  }, [notification, isToastFocused]);
-
-  // Dynamic statistics calculated across all sales
-  const stats: SaleSummary = useMemo(() => {
-    let todayRevenueCents = 0;
-    let todaySalesCount = 0;
-    let todayProfitCents = 0;
-
-    for (const s of sales) {
-      if (isToday(s.soldAt, currentDateKey)) {
-        todayRevenueCents += toCents(s.totalAmount);
-        todaySalesCount += 1;
-        todayProfitCents += toCents(s.profitAmount);
-      }
-    }
-
-    const todayAverageCheck =
-      todaySalesCount > 0
-        ? fromCents(Math.round(todayRevenueCents / todaySalesCount))
-        : 0;
-
-    return {
-      todayRevenue: fromCents(todayRevenueCents),
-      todaySalesCount,
-      todayAverageCheck,
-      todayProfit: fromCents(todayProfitCents),
-    };
-  }, [sales, currentDateKey]);
-
-  // Filter sales by search query, payment method, and period
-  const filteredSales = useMemo(() => {
-    return sales.filter((s) => {
-      // 1. Search Query (receiptNumber, comment, item names, item SKUs)
-      if (filters.searchQuery.trim()) {
-        const q = filters.searchQuery.trim().toLowerCase();
-        const matchNumber = s.receiptNumber.toLowerCase().includes(q);
-        const matchComment = s.comment ? s.comment.toLowerCase().includes(q) : false;
-        const matchItems = s.items.some(
-          (it) =>
-            it.productName.toLowerCase().includes(q) ||
-            it.sku.toLowerCase().includes(q)
-        );
-        if (!matchNumber && !matchComment && !matchItems) {
-          return false;
-        }
-      }
-
-      // 2. Payment Method Filter
-      if (filters.paymentMethod !== 'all' && s.paymentMethod !== filters.paymentMethod) {
-        return false;
-      }
-
-      // 3. Period Filter
-      if (filters.period === 'today') {
-        if (!isToday(s.soldAt, currentDateKey)) return false;
-      } else if (filters.period === 'week') {
-        if (!isWithinDays(s.soldAt, 7, currentDateKey)) return false;
-      } else if (filters.period === 'month') {
-        if (!isWithinDays(s.soldAt, 30, currentDateKey)) return false;
-      }
-
       return true;
-    })
-    .sort((a, b) => {
-      const da = parseCustomDate(a.soldAt)?.getTime() ?? 0;
-      const db = parseCustomDate(b.soldAt)?.getTime() ?? 0;
-      if (da !== db) return db - da;
-      const ca = parseCustomDate(a.createdAt)?.getTime() ?? 0;
-      const cb = parseCustomDate(b.createdAt)?.getTime() ?? 0;
-      if (ca !== cb) return cb - ca;
-      return b.id.localeCompare(a.id);
-    });
-  }, [sales, filters, currentDateKey]);
+    },
+    [confirmPendingFromSales, notify]
+  );
+
+  const {
+    sales,
+    isLoadingSales: isFetchingSales,
+    salesLoadError,
+    isSalesTruncated,
+    products,
+    isLoadingProducts,
+    productsLoadError,
+    loadSales,
+    loadProducts,
+    reloadAll,
+  } = useSalesData({ userId, isAnyModalOpen, onSalesLoaded: handleSalesLoaded });
+
+  const { isResolvingPending, handleResolvePending, handleCreateSale } = useSaleSubmission({
+    userId,
+    pendingOperation,
+    persistPending,
+    clearPending,
+    reloadAll,
+    refreshProducts: loadProducts,
+    notify,
+    isAnyModalOpen,
+  });
+
+  // Resolving a pending sale counts as receipt loading (disables creation and retry)
+  const isLoadingSales = isFetchingSales || isResolvingPending;
+
+  // Dynamic statistics calculated across all loaded receipts
+  const stats: SaleSummary = useMemo(
+    () => calculateSalesSummaryStats(sales, currentDateKey),
+    [sales, currentDateKey]
+  );
+
+  // Filter receipts by search query, payment method, and period
+  const filteredSales = useMemo(
+    () => filterSales(sales, filters, currentDateKey),
+    [sales, filters, currentDateKey]
+  );
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredSales.length / pageSize) || 1;
@@ -179,11 +146,7 @@ export const SalesPage = () => {
     filters.paymentMethod !== 'all';
 
   const handleResetFilters = useCallback(() => {
-    setFilters({
-      searchQuery: '',
-      period: 'all',
-      paymentMethod: 'all',
-    });
+    setFilters(DEFAULT_FILTERS);
     setCurrentPage(1);
     requestAnimationFrame(() => {
       const input =
@@ -200,12 +163,28 @@ export const SalesPage = () => {
     setCurrentPage(1);
   }, []);
 
+  const isCreateDisabled = isLoadingProducts || Boolean(productsLoadError) || isLoadingSales;
+  const createDisabledTooltip = productsLoadError
+    ? 'Не удалось загрузить каталог товаров'
+    : isLoadingProducts
+      ? 'Загрузка каталога товаров...'
+      : isLoadingSales
+        ? 'Загрузка чеков...'
+        : undefined;
+
   const handleOpenCreateModal = useCallback(() => {
+    if (isCreateDisabled) return;
     if (document.activeElement instanceof HTMLElement) {
       previousFocusRef.current = document.activeElement;
     }
     setIsCreateModalOpen(true);
-  }, []);
+    // The form must work with the current catalog: reload prices and stock in the background
+    void loadProducts();
+  }, [isCreateDisabled, loadProducts]);
+
+  const handleRefreshCatalog = useCallback(() => {
+    void loadProducts();
+  }, [loadProducts]);
 
   const handleCloseCreateModal = useCallback(() => {
     setIsCreateModalOpen(false);
@@ -218,18 +197,6 @@ export const SalesPage = () => {
   const handleCloseViewModal = useCallback(() => {
     setSaleToView(null);
   }, []);
-
-  const handleCreateSale = useCallback(
-    (data: SaleFormData): { success: boolean; error?: string } => {
-      const result = addSale(data);
-      if (result.success) {
-        setIsCreateModalOpen(false);
-        setNotification('Продажа успешно оформлена и проведена по складу');
-      }
-      return result;
-    },
-    [addSale]
-  );
 
   return (
     <div className={styles.salesPage}>
@@ -246,7 +213,8 @@ export const SalesPage = () => {
           data-add-sale-btn
           className={styles.addBtnHeader}
           onClick={handleOpenCreateModal}
-          title="Оформить новую продажу"
+          disabled={isCreateDisabled}
+          title={createDisabledTooltip ?? 'Оформить новую продажу'}
         >
           <Plus size={16} />
           <span>Новая продажа</span>
@@ -275,10 +243,67 @@ export const SalesPage = () => {
           <button
             type="button"
             className={styles.toastClose}
-            onClick={handleDismissNotification}
+            onClick={dismissNotification}
             aria-label="Закрыть уведомление"
           >
             <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Pending Unconfirmed Sale Banner */}
+      <SalePendingBanner
+        pendingOperation={pendingOperation}
+        isResolving={isResolvingPending}
+        isLoading={isLoadingSales}
+        onResolve={handleResolvePending}
+      />
+
+      {/* Truncated receipts notice */}
+      {isSalesTruncated && (
+        <div className={styles.truncatedNotice} role="note">
+          <AlertCircle size={16} aria-hidden="true" />
+          <span>
+            Показаны последние {sales.length} чеков (достигнут лимит выборки). Более ранние чеки не загружены.
+          </span>
+        </div>
+      )}
+
+      {/* Error Banners with Retry */}
+      {salesLoadError && (
+        <div className={styles.errorBanner} role="alert">
+          <div className={styles.errorInfo}>
+            <AlertCircle size={20} />
+            <span className={styles.errorText}>{salesLoadError}</span>
+          </div>
+          <button
+            type="button"
+            data-retry-sales-btn
+            className={styles.retryBtn}
+            onClick={() => void loadSales(true)}
+            disabled={isLoadingSales}
+          >
+            <RotateCcw size={14} />
+            <span>{isLoadingSales ? 'Загрузка...' : 'Повторить'}</span>
+          </button>
+        </div>
+      )}
+
+      {productsLoadError && (
+        <div className={styles.errorBanner} role="alert">
+          <div className={styles.errorInfo}>
+            <AlertCircle size={20} />
+            <span className={styles.errorText}>{productsLoadError}</span>
+          </div>
+          <button
+            type="button"
+            data-retry-products-btn
+            className={styles.retryBtn}
+            onClick={() => void loadProducts(true)}
+            disabled={isLoadingProducts}
+          >
+            <RotateCcw size={14} />
+            <span>{isLoadingProducts ? 'Загрузка...' : 'Повторить'}</span>
           </button>
         </div>
       )}
@@ -293,38 +318,53 @@ export const SalesPage = () => {
         onResetFilters={handleResetFilters}
         onOpenCreateModal={handleOpenCreateModal}
         searchInputRef={searchInputRef}
+        isCreateDisabled={isCreateDisabled}
+        createDisabledTooltip={createDisabledTooltip}
       />
 
-      {/* Table */}
-      <SalesTable
-        sales={paginatedSales}
-        totalCount={sales.length}
-        hasActiveFilters={hasActiveFilters}
-        onResetFilters={handleResetFilters}
-        onOpenCreateModal={handleOpenCreateModal}
-        onViewSale={handleViewSale}
-      />
+      {/* Table with Loading State */}
+      {isLoadingSales && sales.length === 0 ? (
+        <div className={styles.tableLoadingCard}>
+          <div className={styles.spinner} role="progressbar" aria-label="Загрузка чеков продаж" />
+          <span className={styles.loadingText}>Загрузка чеков продаж...</span>
+        </div>
+      ) : (
+        <>
+          <SalesTable
+            sales={paginatedSales}
+            totalCount={sales.length}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={handleResetFilters}
+            onOpenCreateModal={handleOpenCreateModal}
+            onViewSale={handleViewSale}
+            isCreateDisabled={isCreateDisabled}
+            createDisabledTooltip={createDisabledTooltip}
+          />
 
-      {/* Pagination */}
-      {filteredSales.length > pageSize && (
-        <Pagination
-          currentPage={safeCurrentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-          totalItems={filteredSales.length}
-          pageSize={pageSize}
-          itemLabel="чеков"
-        />
+          {/* Pagination */}
+          {filteredSales.length > pageSize && (
+            <Pagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filteredSales.length}
+              pageSize={pageSize}
+              itemLabel="чеков"
+            />
+          )}
+        </>
       )}
 
       {/* Modals */}
       {isCreateModalOpen && (
         <SaleFormModal
           isOpen={isCreateModalOpen}
-          activeProducts={activeProducts}
-          allProducts={products}
+          activeProducts={products}
+          initialResponsiblePerson={profile?.full_name}
+          pendingOperation={pendingOperation}
           onClose={handleCloseCreateModal}
           onSubmit={handleCreateSale}
+          onRefreshCatalog={handleRefreshCatalog}
         />
       )}
 

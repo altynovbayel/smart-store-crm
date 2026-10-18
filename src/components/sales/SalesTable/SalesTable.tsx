@@ -12,6 +12,8 @@ export interface SalesTableProps {
   onResetFilters: () => void;
   onOpenCreateModal: () => void;
   onViewSale: (sale: Sale) => void;
+  isCreateDisabled?: boolean;
+  createDisabledTooltip?: string;
 }
 
 const getPaymentBadgeClass = (method: PaymentMethod): string => {
@@ -34,6 +36,8 @@ export const SalesTable = ({
   onResetFilters,
   onOpenCreateModal,
   onViewSale,
+  isCreateDisabled = false,
+  createDisabledTooltip,
 }: SalesTableProps) => {
   // Empty state: No sales registered at all
   if (totalCount === 0) {
@@ -50,6 +54,8 @@ export const SalesTable = ({
           type="button"
           className={styles.emptyActionBtn}
           onClick={onOpenCreateModal}
+          disabled={isCreateDisabled}
+          title={createDisabledTooltip}
         >
           Оформить первую продажу
         </button>

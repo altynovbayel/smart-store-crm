@@ -1,3 +1,5 @@
+import type { ApiErrorKind, MappedApiError } from './apiError';
+
 export type OutcomeReason =
   | 'damaged'
   | 'defective'
@@ -73,21 +75,10 @@ export interface OutcomeSummary {
   monthCount: number;
 }
 
-/**
- * Error classification for outcome operations:
- * - validation: client-side check failed, the request was never sent;
- * - domain: server deterministically refused the operation (transaction rolled back);
- * - network: transport failure or gateway/5xx response, server outcome is unknown;
- * - auth: session expired or insufficient privileges, server outcome is unknown;
- * - internal: unexpected client failure, server outcome is treated as unknown.
- */
-export type OutcomeErrorKind = 'validation' | 'domain' | 'network' | 'auth' | 'internal';
+/** Outcome errors use the shared classification (see ApiErrorKind). */
+export type OutcomeErrorKind = ApiErrorKind;
 
-export interface MappedOutcomeError {
-  kind: OutcomeErrorKind;
-  message: string;
-  field?: string;
-}
+export type MappedOutcomeError = MappedApiError;
 
 export type OutcomeApiResult<T> =
   | { success: true; data: T }

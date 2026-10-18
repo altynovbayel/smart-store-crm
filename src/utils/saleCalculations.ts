@@ -8,6 +8,7 @@ import type {
   SaleTotals,
   SaleValidationResult,
   BarcodeScanResult,
+  HistoricalPriceResult,
 } from '../types';
 import { parseCustomDate, normalizeDocumentTimestamp } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
@@ -143,7 +144,8 @@ export const calculateSaleTotals = (
   rawReceiptDiscountValue: string,
   paymentMethod: PaymentMethod,
   rawReceivedAmount: string,
-  soldAt?: string
+  soldAt?: string,
+  historicalPrices?: Record<string, HistoricalPriceResult>
 ): SaleTotals => {
   let totalUnits = 0;
   let subtotalCents = 0;
@@ -156,7 +158,12 @@ export const calculateSaleTotals = (
 
   for (const it of items) {
     const prod = activeProducts.find((p) => p.id === it.productId);
-    const costPrice = prod ? getHistoricalPurchasePrice(prod, soldAtTimestamp) : 0;
+    const resolvedCost = historicalPrices?.[it.productId];
+    const costPrice = resolvedCost
+      ? resolvedCost.purchasePrice
+      : prod
+        ? getHistoricalPurchasePrice(prod, soldAtTimestamp)
+        : 0;
     const itemCalc = calculateSaleItemSubtotals(
       it.rawQuantity,
       it.rawUnitPrice,
@@ -270,7 +277,9 @@ export const validateSaleForm = (
   receiptDiscountType: DiscountType,
   rawReceiptDiscountValue: string,
   items: SaleFormItemState[],
-  activeProducts: Product[]
+  activeProducts: Product[],
+  historicalPrices?: Record<string, HistoricalPriceResult>,
+  isRetrySubmission = false
 ): SaleValidationResult => {
   const errors: Record<string, string> = {};
 
@@ -318,13 +327,14 @@ export const validateSaleForm = (
     seenProductIds.add(it.productId);
 
     const product = activeProducts.find((p) => p.id === it.productId);
-    if (!product || product.isArchived) {
+    // On retry of an unconfirmed sale, stock may already be deducted on the server: skip catalog checks
+    if (!isRetrySubmission && (!product || product.isArchived)) {
       errors[`item-${it.id}-product`] = `Строка ${rowNum}: товар не найден или архивирован`;
       return;
     }
 
     // Stock check
-    if (product.stock <= 0) {
+    if (!isRetrySubmission && product && product.stock <= 0) {
       errors[`item-${it.id}-qty`] = `Строка ${rowNum}: товар отсутствует на складе (остаток 0)`;
       return;
     }
@@ -335,7 +345,7 @@ export const validateSaleForm = (
       return;
     }
 
-    if (qty > product.stock) {
+    if (!isRetrySubmission && product && qty > product.stock) {
       errors[`item-${it.id}-qty`] = `Строка ${rowNum}: количество (${qty}) превышает остаток (${product.stock} ${product.unit})`;
       return;
     }
@@ -382,10 +392,12 @@ export const validateSaleForm = (
       return;
     }
 
-    const soldAtTimestamp = normalizeDocumentTimestamp(soldAt);
-    const costPrice = getHistoricalPurchasePrice(product, soldAtTimestamp);
-    const costPriceCents = toCents(costPrice);
-    const lineCostCents = qty * costPriceCents;
+    // Cost bounds are checked only against the price the RPC will actually use.
+    // Without a resolved historical price (history not loaded) or on retry, an approximate
+    // catalog cost must not block the sale: the server validates the bounds.
+    const resolvedCost = historicalPrices?.[it.productId];
+    const lineCostCents =
+      resolvedCost && !isRetrySubmission ? qty * resolvedCost.purchasePriceMinor : 0;
     if (
       !Number.isSafeInteger(lineCostCents) ||
       !Number.isSafeInteger(totalCostCents + lineCostCents)
@@ -399,7 +411,7 @@ export const validateSaleForm = (
     totalCostCents += lineCostCents;
 
     validatedItems.push({
-      productId: product.id,
+      productId: it.productId,
       quantity: qty,
       unitPrice,
       discountType: it.discountType,

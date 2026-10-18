@@ -10,10 +10,8 @@ import type {
   HistoricalPriceResult,
 } from '../../types';
 import { minorToSom } from '../../utils/moneyUtils';
-import {
-  resolveHistoricalPurchasePrices,
-  type PriceHistoryPoint,
-} from '../../utils/outcomePriceHistory';
+import { resolveHistoricalPurchasePrices } from '../../utils/outcomePriceHistory';
+import { fetchPriceHistoryPoints } from '../shared/priceHistoryQuery';
 import {
   mapOutcomeDocumentRowToDocument,
   mapOutcomeItemRowToItem,
@@ -290,41 +288,11 @@ export const outcomeApi = {
         return { success: true, data: {} };
       }
 
-      const allRows: PriceHistoryPoint[] = [];
-      const batchSize = 1000;
-      let from = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        let query = supabase
-          .from('product_price_history')
-          .select('id, product_id, purchase_price_minor, effective_from, created_at')
-          .in('product_id', uniqueIds)
-          .order('effective_from', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (signal) {
-          query = query.abortSignal(signal);
-        }
-
-        const { data, error, status } = await query;
-
-        if (error) {
-          return { success: false, error: mapOutcomeError({ ...error, status }) };
-        }
-
-        if (data && data.length > 0) {
-          allRows.push(...data);
-          if (data.length < batchSize) {
-            hasMore = false;
-          } else {
-            from += batchSize;
-          }
-        } else {
-          hasMore = false;
-        }
+      const historyRes = await fetchPriceHistoryPoints(uniqueIds, signal);
+      if (!historyRes.success) {
+        return { success: false, error: mapOutcomeError(historyRes.error) };
       }
+      const allRows = historyRes.rows;
 
       return {
         success: true,

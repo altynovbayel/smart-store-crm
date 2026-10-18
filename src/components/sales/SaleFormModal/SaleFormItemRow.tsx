@@ -1,23 +1,27 @@
 import { Trash2 } from 'lucide-react';
-import type { Product, SaleFormItemState, DiscountType } from '../../../types';
+import type {
+  Product,
+  SaleFormItemState,
+  DiscountType,
+  HistoricalPriceResult,
+} from '../../../types';
 import { calculateSaleItemSubtotals } from '../../../utils/saleCalculations';
 import { formatCurrency } from '../../../utils/formatUtils';
-import { normalizeDocumentTimestamp } from '../../../utils/dateUtils';
-import { getHistoricalPurchasePrice } from '../../../utils/productUtils';
 import styles from './SaleFormModal.module.scss';
 
 export interface SaleFormItemRowProps {
   index: number;
   item: SaleFormItemState;
-  soldAt?: string;
   activeProducts: Product[];
   selectedProduct?: Product;
   allItems: SaleFormItemState[];
   errors: Record<string, string>;
   isOnlyRow: boolean;
+  disabled?: boolean;
+  /** Historical purchase price at the sale date (preview only). */
+  historicalPrice?: HistoricalPriceResult;
   onProductChange: (rowId: string, newProductId: string) => void;
   onQuantityChange: (rowId: string, val: string) => void;
-  onUnitPriceChange: (rowId: string, val: string) => void;
   onDiscountTypeChange: (rowId: string, type: DiscountType) => void;
   onDiscountValueChange: (rowId: string, val: string) => void;
   onRemove: (rowId: string) => void;
@@ -26,25 +30,20 @@ export interface SaleFormItemRowProps {
 export const SaleFormItemRow = ({
   index,
   item,
-  soldAt,
   activeProducts,
   selectedProduct,
   allItems,
   errors,
   isOnlyRow,
+  disabled = false,
+  historicalPrice,
   onProductChange,
   onQuantityChange,
-  onUnitPriceChange,
   onDiscountTypeChange,
   onDiscountValueChange,
   onRemove,
 }: SaleFormItemRowProps) => {
-  const soldAtTimestamp = normalizeDocumentTimestamp(soldAt);
-  const costPrice = selectedProduct
-    ? (soldAtTimestamp > 0
-        ? getHistoricalPurchasePrice(selectedProduct, soldAtTimestamp)
-        : selectedProduct.purchasePrice)
-    : 0;
+  const costPrice = historicalPrice?.purchasePrice ?? selectedProduct?.purchasePrice ?? 0;
 
   const itemCalc = selectedProduct
     ? calculateSaleItemSubtotals(
@@ -74,6 +73,7 @@ export const SaleFormItemRow = ({
           id={`item-prod-${item.id}`}
           className={styles.itemSelect}
           value={item.productId}
+          disabled={disabled}
           onChange={(e) => onProductChange(item.id, e.target.value)}
           aria-invalid={prodErr ? 'true' : undefined}
           aria-describedby={prodErr ? `item-prod-${item.id}-err` : undefined}
@@ -139,6 +139,7 @@ export const SaleFormItemRow = ({
           className={styles.itemInput}
           placeholder="1"
           value={item.rawQuantity}
+          disabled={disabled}
           onChange={(e) => onQuantityChange(item.id, e.target.value)}
           aria-invalid={qtyErr ? 'true' : undefined}
           aria-describedby={qtyErr ? `item-qty-${item.id}-err` : undefined}
@@ -166,7 +167,8 @@ export const SaleFormItemRow = ({
           className={styles.itemInput}
           placeholder="0"
           value={item.rawUnitPrice}
-          onChange={(e) => onUnitPriceChange(item.id, e.target.value)}
+          readOnly
+          title="Цена продажи берётся из актуального каталога. Для снижения цены используйте скидку"
           aria-invalid={priceErr ? 'true' : undefined}
           aria-describedby={priceErr ? `item-price-${item.id}-err` : undefined}
         />
@@ -190,7 +192,10 @@ export const SaleFormItemRow = ({
           id={`item-dtype-${item.id}`}
           className={styles.itemSelect}
           value={item.discountType}
-          onChange={(e) => onDiscountTypeChange(item.id, e.target.value as DiscountType)}
+          disabled={disabled}
+          onChange={(e) =>
+            onDiscountTypeChange(item.id, e.target.value === 'percent' ? 'percent' : 'fixed')
+          }
         >
           <option value="fixed">Фикс. (сом)</option>
           <option value="percent">Процент (%)</option>
@@ -209,6 +214,7 @@ export const SaleFormItemRow = ({
           className={styles.itemInput}
           placeholder="0"
           value={item.rawDiscountValue}
+          disabled={disabled}
           onChange={(e) => onDiscountValueChange(item.id, e.target.value)}
           aria-invalid={discountErr ? 'true' : undefined}
           aria-describedby={discountErr ? `item-dval-${item.id}-err` : undefined}
@@ -248,7 +254,7 @@ export const SaleFormItemRow = ({
         <button
           type="button"
           className={styles.deleteRowBtn}
-          disabled={isOnlyRow}
+          disabled={isOnlyRow || disabled}
           onClick={() => onRemove(item.id)}
           aria-label={`Удалить позицию ${index + 1}`}
           title={
