@@ -4,7 +4,8 @@ import styles from './WarehouseStats.module.scss';
 
 export interface WarehouseStatsProps {
   totalCount: number;
-  totalCost: number;
+  /** null → purchase prices unavailable (cashier): the «Стоимость склада» card is not rendered. */
+  totalCost: number | null;
   lowStockCount: number;
   outOfStockCount: number;
 }
@@ -16,7 +17,10 @@ export const WarehouseStats = ({
   outOfStockCount,
 }: WarehouseStatsProps) => {
   return (
-    <div className={styles.statsGrid} aria-label="Сводка склада">
+    <div
+      className={`${styles.statsGrid} ${totalCost === null ? styles.statsGridThree : ''}`}
+      aria-label="Сводка склада"
+    >
       {/* 1. Всего товаров */}
       <div className={styles.statCard}>
         <div className={`${styles.iconBox} ${styles.iconBlue}`} aria-hidden="true">
@@ -28,16 +32,18 @@ export const WarehouseStats = ({
         </div>
       </div>
 
-      {/* 2. Стоимость склада */}
-      <div className={styles.statCard}>
-        <div className={`${styles.iconBox} ${styles.iconGreen}`} aria-hidden="true">
-          <Coins size={22} />
+      {/* 2. Стоимость склада (admin only) */}
+      {totalCost !== null && (
+        <div className={styles.statCard}>
+          <div className={`${styles.iconBox} ${styles.iconGreen}`} aria-hidden="true">
+            <Coins size={22} />
+          </div>
+          <div className={styles.content}>
+            <span className={styles.title}>Стоимость склада</span>
+            <span className={styles.value}>{formatCurrency(totalCost)}</span>
+          </div>
         </div>
-        <div className={styles.content}>
-          <span className={styles.title}>Стоимость склада</span>
-          <span className={styles.value}>{formatCurrency(totalCost)}</span>
-        </div>
-      </div>
+      )}
 
       {/* 3. Заканчиваются */}
       <div className={styles.statCard}>

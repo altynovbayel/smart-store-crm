@@ -12,7 +12,7 @@ import {
   PackageOpen,
 } from 'lucide-react';
 import type {
-  Product,
+  WarehouseCatalogProduct,
   ProductSortField,
   ProductSortConfig,
 } from '../../../types';
@@ -22,6 +22,8 @@ import { formatCurrency } from '../../../utils/formatUtils';
 import { getStockStatusLabel } from '../../../utils/productUtils';
 import { isElementVisible } from '../../../utils/focusUtils';
 import styles from './ProductsTable.module.scss';
+
+type Product = WarehouseCatalogProduct;
 
 export interface ProductsTableProps {
   products: Product[];
@@ -33,6 +35,8 @@ export interface ProductsTableProps {
   onArchiveProduct: (product: Product) => void;
   onResetFilters: () => void;
   canManageProducts?: boolean;
+  /** Purchase price column (admin only); without it the column is not rendered at all. */
+  showPurchasePrice?: boolean;
 }
 
 interface MenuCoords {
@@ -50,6 +54,7 @@ export const ProductsTable = ({
   onArchiveProduct,
   onResetFilters,
   canManageProducts = true,
+  showPurchasePrice = false,
 }: ProductsTableProps) => {
   const [activeMenuProduct, setActiveMenuProduct] = useState<Product | null>(null);
   const [menuCoords, setMenuCoords] = useState<MenuCoords | null>(null);
@@ -291,17 +296,19 @@ export const ProductsTable = ({
               </th>
               <th scope="col">Артикул / Штрихкод</th>
               <th scope="col">Категория</th>
-              <th scope="col">
-                <button
-                  type="button"
-                  className={styles.sortableHeaderBtn}
-                  onClick={() => onSort('purchasePrice')}
-                  aria-label="Сортировать по цене закупки"
-                >
-                  <span>Закупка</span>
-                  {renderSortIndicator('purchasePrice')}
-                </button>
-              </th>
+              {showPurchasePrice && (
+                <th scope="col">
+                  <button
+                    type="button"
+                    className={styles.sortableHeaderBtn}
+                    onClick={() => onSort('purchasePrice')}
+                    aria-label="Сортировать по цене закупки"
+                  >
+                    <span>Закупка</span>
+                    {renderSortIndicator('purchasePrice')}
+                  </button>
+                </th>
+              )}
               <th scope="col">
                 <button
                   type="button"
@@ -367,10 +374,12 @@ export const ProductsTable = ({
                   </span>
                 </td>
 
-                {/* Purchase Price */}
-                <td className={styles.purchaseCell}>
-                  {formatCurrency(product.purchasePrice)}
-                </td>
+                {/* Purchase Price (admin only) */}
+                {showPurchasePrice && (
+                  <td className={styles.purchaseCell}>
+                    {product.purchasePrice === null ? '—' : formatCurrency(product.purchasePrice)}
+                  </td>
+                )}
 
                 {/* Selling Price */}
                 <td className={styles.sellingCell}>

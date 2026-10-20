@@ -723,6 +723,24 @@ export type Database = {
         Args: { p_after_id?: string; p_limit?: number; p_snapshot_at?: string }
         Returns: Json
       }
+      rpc_list_product_movements: {
+        Args: {
+          p_after_created_at?: string
+          p_after_id?: string
+          p_after_occurred_at?: string
+          p_limit?: number
+          p_product_id: string
+        }
+        Returns: Json
+      }
+      rpc_list_products: {
+        Args: {
+          p_after_id?: string
+          p_include_archived?: boolean
+          p_limit?: number
+        }
+        Returns: Json
+      }
       rpc_update_product: {
         Args: {
           p_barcode: string

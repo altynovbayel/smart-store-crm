@@ -1,4 +1,4 @@
-import type { Product, CSVCellValue } from '../types';
+import type { WarehouseCatalogProduct, CSVCellValue } from '../types';
 import { getStockStatusLabel } from './productUtils';
 
 /**
@@ -80,29 +80,29 @@ export const downloadCSVFile = (csvContent: string, fileName: string): void => {
  * User-entered strings are protected from formula execution (CSV Injection).
  */
 export const exportProductsToCSV = (
-  products: Product[],
+  products: readonly WarehouseCatalogProduct[],
+  includePurchasePrice: boolean,
   fileName = 'smart-store-sklad.csv'
 ): void => {
+  // The purchase-price column exists only in the admin export; it is never filled with 0
   const headers = [
     'Артикул',
     'Штрихкод',
     'Название',
     'Категория',
-    'Описание',
-    'Закупочная цена (сом)',
+    ...(includePurchasePrice ? ['Описание', 'Закупочная цена (сом)'] : []),
     'Цена продажи (сом)',
     'Остаток',
     'Мин. остаток',
     'Статус',
   ];
 
-  const rows = products.map((p) => [
+  const rows = products.map((p): CSVCellValue[] => [
     p.sku,
     p.barcode,
     p.name,
     p.categoryLabel,
-    p.description || '',
-    p.purchasePrice,
+    ...(includePurchasePrice ? [p.description ?? '', p.purchasePrice ?? ''] : []),
     p.sellingPrice,
     p.stock,
     p.minStockThreshold,

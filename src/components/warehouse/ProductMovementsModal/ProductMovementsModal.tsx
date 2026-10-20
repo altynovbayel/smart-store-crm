@@ -8,15 +8,16 @@ import {
   AlertCircle,
   RotateCcw,
 } from 'lucide-react';
-import type { Product, WarehouseMovement } from '../../../types';
+import type { WarehouseCatalogProduct, WarehouseMovementView } from '../../../types';
 import { restoreFocusWithFallback, getFocusableElements } from '../../../utils/focusUtils';
 import { formatDateTime } from '../../../utils/dateUtils';
 import styles from './ProductMovementsModal.module.scss';
 
 export interface ProductMovementsModalProps {
   isOpen: boolean;
-  product: Product | null;
-  movements: WarehouseMovement[];
+  product: Pick<WarehouseCatalogProduct, 'name' | 'sku' | 'stock' | 'unit' | 'minStockThreshold'> | null;
+  /** Cashier rows carry no reason / author — those lines are then not rendered. */
+  movements: WarehouseMovementView[];
   isLoading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -215,7 +216,9 @@ export const ProductMovementsModal = ({
                         <time className={styles.movTime}>{formatDateTime(mov.createdAt)}</time>
                       </div>
                       {mov.reason && <p className={styles.movReason}>{mov.reason}</p>}
-                      <span className={styles.movAuthor}>Ответственный: {mov.author}</span>
+                      {mov.author !== undefined && (
+                        <span className={styles.movAuthor}>Ответственный: {mov.author}</span>
+                      )}
                     </div>
 
                     <div

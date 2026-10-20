@@ -15,7 +15,7 @@ import { minorToSom, somToMinor } from '../../utils/moneyUtils';
 type ProductRow = Database['public']['Tables']['products']['Row'];
 type StockMovementRow = Database['public']['Tables']['stock_movements']['Row'];
 
-const mapMovementTypeToFrontend = (
+export const mapMovementTypeToFrontend = (
   dbType: Database['public']['Enums']['movement_type']
 ): { type: WarehouseMovementType; typeLabel: string } => {
   switch (dbType) {
