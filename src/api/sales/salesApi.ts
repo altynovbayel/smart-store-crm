@@ -4,16 +4,22 @@ import type {
   CreateSaleResult,
   FetchSalesOptions,
   FetchSalesResult,
-  HistoricalPriceResult,
-  Product,
+  ListSalesRpcArgs,
   Sale,
   SaleApiResult,
+  SalesRpcRole,
 } from '../../types';
-import { resolveHistoricalPurchasePrices } from '../../utils/outcomePriceHistory';
+import { SALES_RPC_MAX_PAGE_SIZE } from '../../types';
 import { signedMinorToAmount } from '../../utils/saleMinorCalculations';
-import { fetchPriceHistoryPoints } from '../shared/priceHistoryQuery';
-import { mapSaleFormToRpcArgs, mapSaleRowToSale } from './salesMappers';
+import { mapSaleFormToRpcArgs } from './salesMappers';
 import { mapSaleError } from './salesErrorMapper';
+import {
+  SalesDataError,
+  isAfterInDescOrder,
+  mapGetSaleResponse,
+  mapSalesPage,
+  type SalesCursor,
+} from './salesRpcMappers';
 
 /**
  * Safe upper limit of receipts loaded into client memory for search, filters and statistics.
@@ -21,13 +27,17 @@ import { mapSaleError } from './salesErrorMapper';
  */
 export const DEFAULT_SALES_FETCH_LIMIT = 5000;
 
-const BATCH_SIZE = 1000;
-
-/** Embedded select: one request per batch returns receipts with all their lines (no N+1). */
-const SALE_WITH_ITEMS_SELECT = '*, items:sale_items(*)';
-
 const isAbortError = (err: unknown): boolean =>
   err instanceof DOMException && err.name === 'AbortError';
+
+const throwIfAborted = (signal?: AbortSignal): void => {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+};
+
+const dataError = (err: SalesDataError): SaleApiResult<never> => ({
+  success: false,
+  error: { kind: 'internal', message: err.message },
+});
 
 const readSafeInteger = (value: unknown): number | null =>
   typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
@@ -42,11 +52,11 @@ const parseCreateSaleResponse = (data: unknown): CreateSaleResult | null => {
   const id = payload.id;
   const receiptNumber = payload.receipt_number;
   const totalMinor = readSafeInteger(payload.total_minor);
-  const profitMinor = readSafeInteger(payload.profit_minor);
+  // profit_minor (if the server still returns it) is deliberately ignored: the client never needs it
   const changeMinor = payload.change_minor === null ? null : readSafeInteger(payload.change_minor);
   const itemsCount = readSafeInteger(payload.items_count);
 
-  if (typeof id !== 'string' || typeof receiptNumber !== 'string' || totalMinor === null || profitMinor === null) {
+  if (typeof id !== 'string' || typeof receiptNumber !== 'string' || totalMinor === null) {
     return null;
   }
 
@@ -54,7 +64,6 @@ const parseCreateSaleResponse = (data: unknown): CreateSaleResult | null => {
     id,
     receiptNumber,
     totalAmount: signedMinorToAmount(totalMinor),
-    profitAmount: signedMinorToAmount(profitMinor),
     changeAmount: changeMinor === null ? null : signedMinorToAmount(changeMinor),
     itemsCount: itemsCount ?? 0,
   };
@@ -62,61 +71,74 @@ const parseCreateSaleResponse = (data: unknown): CreateSaleResult | null => {
 
 /**
  * Repository / API layer for Sales via Supabase.
- * - SELECT queries are read-only; receipts embed their lines (sale_items) — no N+1.
+ * - Receipts are read ONLY through the role-aware RPCs rpc_list_sales / rpc_get_sale /
+ *   rpc_has_any_sales (no direct SELECT on sales / sale_items); a cashier payload never carries
+ *   profit or cost data and any such field is rejected as a load error.
  * - Sales are created ONLY through the transactional RPC `rpc_create_sale`.
  * - Direct INSERT/UPDATE/DELETE on sales, sale_items, products or stock_movements is prohibited
  *   (and blocked by grants/RLS).
  */
 export const salesApi = {
   /**
-   * Loads receipts ordered by sold_at DESC, created_at DESC, id DESC in PostgREST-safe batches.
-   * Optional bounds: soldFrom (inclusive), soldTo (inclusive) and soldBefore (exclusive) —
-   * Sales History loads calendar ranges as [soldFrom, soldBefore).
-   * Receipts are de-duplicated by id: a sale inserted between batches shifts OFFSET pagination.
+   * Loads receipts (sold_at, created_at, id DESC) via rpc_list_sales in keyset pages of <= 200.
+   * Optional bounds: soldFrom (inclusive) and soldBefore (exclusive) — Sales History loads
+   * calendar ranges as [soldFrom, soldBefore).
+   * - next_cursor strings are passed back UNCHANGED (microseconds, no Date round-trip);
+   * - every page is strictly validated (exact field set of the returned role, order, totals);
+   * - the role must stay the same across pages, the cursor must strictly advance and every row
+   *   must lie after the previous cursor; a repeated id is an error (no silent de-duplication);
+   * - all-or-nothing: any error returns a failure and no partial list.
+   * isTruncated: the safety limit was reached while the server still had older receipts.
    */
   async fetchSales(options: FetchSalesOptions = {}): Promise<SaleApiResult<FetchSalesResult>> {
-    const { signal, limit = DEFAULT_SALES_FETCH_LIMIT, soldFrom, soldTo, soldBefore } = options;
+    const { signal, limit = DEFAULT_SALES_FETCH_LIMIT, soldFrom, soldBefore } = options;
 
     try {
       const sales: Sale[] = [];
       const seenIds = new Set<string>();
-      let from = 0;
+      let role: SalesRpcRole | null = null;
+      let cursor: SalesCursor | null = null;
+      let cursorKey: { soldMicros: number; createdMicros: number; id: string } | null = null;
       let hasMore = true;
 
       while (hasMore && sales.length < limit) {
-        const batchLimit = Math.min(BATCH_SIZE, limit - sales.length);
+        const pageLimit = Math.min(SALES_RPC_MAX_PAGE_SIZE, limit - sales.length);
+        const args: ListSalesRpcArgs = { p_limit: pageLimit };
+        if (soldFrom) args.p_sold_from = soldFrom;
+        if (soldBefore) args.p_sold_before = soldBefore;
+        if (cursor) {
+          args.p_after_sold_at = cursor.soldAt;
+          args.p_after_created_at = cursor.createdAt;
+          args.p_after_id = cursor.id;
+        }
 
-        let query = supabase
-          .from('sales')
-          .select(SALE_WITH_ITEMS_SELECT)
-          .order('sold_at', { ascending: false })
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + batchLimit - 1);
-
-        if (soldFrom) query = query.gte('sold_at', soldFrom);
-        if (soldTo) query = query.lte('sold_at', soldTo);
-        if (soldBefore) query = query.lt('sold_at', soldBefore);
-        if (signal) query = query.abortSignal(signal);
-
-        const { data, error, status } = await query;
+        let request = supabase.rpc('rpc_list_sales', args);
+        if (signal) request = request.abortSignal(signal);
+        const { data, error, status } = await request;
+        throwIfAborted(signal);
 
         if (error) {
           return { success: false, error: mapSaleError({ ...error, status }) };
         }
 
-        const rows = data ?? [];
-        for (const row of rows) {
-          if (!seenIds.has(row.id)) {
-            seenIds.add(row.id);
-            sales.push(mapSaleRowToSale(row));
-          }
+        const page = mapSalesPage(data, pageLimit);
+        if (role !== null && page.role !== role) throw new SalesDataError();
+        role = page.role;
+
+        for (let i = 0; i < page.sales.length; i++) {
+          const sale = page.sales[i];
+          if (seenIds.has(sale.id)) throw new SalesDataError();
+          if (cursorKey && !isAfterInDescOrder(page.keys[i], cursorKey)) throw new SalesDataError();
+          seenIds.add(sale.id);
+          sales.push(sale);
         }
 
-        if (rows.length < batchLimit) {
+        if (page.nextCursor === null || page.nextCursorKey === null) {
           hasMore = false;
         } else {
-          from += rows.length;
+          if (cursorKey && !isAfterInDescOrder(page.nextCursorKey, cursorKey)) throw new SalesDataError();
+          cursor = page.nextCursor;
+          cursorKey = page.nextCursorKey;
         }
       }
 
@@ -130,50 +152,54 @@ export const salesApi = {
       };
     } catch (err: unknown) {
       if (isAbortError(err)) throw err;
+      if (err instanceof SalesDataError) return dataError(err);
       return { success: false, error: mapSaleError(err) };
     }
   },
 
   /**
-   * Lightweight existence probe (`id`, limit 1): distinguishes "no sales at all"
-   * from "nothing matches the selected period".
+   * Existence probe via rpc_has_any_sales: distinguishes "no sales at all"
+   * from "nothing matches the selected period" (returns no receipt data).
    */
   async hasAnySales(signal?: AbortSignal): Promise<SaleApiResult<boolean>> {
     try {
-      let query = supabase.from('sales').select('id').limit(1);
-      if (signal) query = query.abortSignal(signal);
-
-      const { data, error, status } = await query;
+      let request = supabase.rpc('rpc_has_any_sales');
+      if (signal) request = request.abortSignal(signal);
+      const { data, error, status } = await request;
+      throwIfAborted(signal);
 
       if (error) {
         return { success: false, error: mapSaleError({ ...error, status }) };
       }
+      if (typeof data !== 'boolean') throw new SalesDataError();
 
-      return { success: true, data: (data ?? []).length > 0 };
+      return { success: true, data };
     } catch (err: unknown) {
       if (isAbortError(err)) throw err;
+      if (err instanceof SalesDataError) return dataError(err);
       return { success: false, error: mapSaleError(err) };
     }
   },
 
   /**
-   * Loads one receipt with its lines by UUID. Returns data: null when it does not exist
-   * (used to verify a pending, unconfirmed sale).
+   * Loads one receipt with its lines by UUID via rpc_get_sale. Returns data: null when it does not
+   * exist (used to verify a pending, unconfirmed sale). The payload is validated like a list row.
    */
   async fetchSaleById(saleId: string, signal?: AbortSignal): Promise<SaleApiResult<Sale | null>> {
     try {
-      let query = supabase.from('sales').select(SALE_WITH_ITEMS_SELECT).eq('id', saleId);
-      if (signal) query = query.abortSignal(signal);
-
-      const { data, error, status } = await query.maybeSingle();
+      let request = supabase.rpc('rpc_get_sale', { p_sale_id: saleId });
+      if (signal) request = request.abortSignal(signal);
+      const { data, error, status } = await request;
+      throwIfAborted(signal);
 
       if (error) {
         return { success: false, error: mapSaleError({ ...error, status }) };
       }
 
-      return { success: true, data: data ? mapSaleRowToSale(data) : null };
+      return { success: true, data: mapGetSaleResponse(data, saleId).sale };
     } catch (err: unknown) {
       if (isAbortError(err)) throw err;
+      if (err instanceof SalesDataError) return dataError(err);
       return { success: false, error: mapSaleError(err) };
     }
   },
@@ -201,7 +227,6 @@ export const salesApi = {
                 id: existing.data.id,
                 receiptNumber: existing.data.receiptNumber,
                 totalAmount: existing.data.totalAmount,
-                profitAmount: existing.data.profitAmount,
                 changeAmount: existing.data.changeAmount ?? null,
                 itemsCount: existing.data.items.length,
               },
@@ -224,37 +249,6 @@ export const salesApi = {
 
       return { success: true, data: parsed };
     } catch (err: unknown) {
-      return { success: false, error: mapSaleError(err) };
-    }
-  },
-
-  /**
-   * Effective historical purchase prices at the sale date, resolved exactly like rpc_create_sale.
-   * Display / bounds-check only: the server takes the authoritative cost snapshot.
-   */
-  async fetchHistoricalPurchasePrices(
-    productIds: string[],
-    soldAt: string,
-    activeProducts: Product[],
-    signal?: AbortSignal
-  ): Promise<SaleApiResult<Record<string, HistoricalPriceResult>>> {
-    try {
-      const uniqueIds = Array.from(new Set(productIds.filter(Boolean)));
-      if (uniqueIds.length === 0) {
-        return { success: true, data: {} };
-      }
-
-      const historyRes = await fetchPriceHistoryPoints(uniqueIds, signal);
-      if (!historyRes.success) {
-        return { success: false, error: mapSaleError(historyRes.error) };
-      }
-
-      return {
-        success: true,
-        data: resolveHistoricalPurchasePrices(uniqueIds, historyRes.rows, soldAt, activeProducts),
-      };
-    } catch (err: unknown) {
-      if (isAbortError(err)) throw err;
       return { success: false, error: mapSaleError(err) };
     }
   },

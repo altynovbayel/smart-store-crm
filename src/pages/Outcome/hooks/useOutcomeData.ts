@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { OutcomeDocument, Product } from '../../../types';
-import { outcomeApi } from '../../../api/outcome';
+import { outcomeApi, mapCatalogToOutcomeProducts } from '../../../api/outcome';
 import { warehouseApi } from '../../../api/warehouse';
 import { restoreFocusWithFallback } from '../../../utils/focusUtils';
 
 interface UseOutcomeDataOptions {
   userId: string | null;
+  /** Outcome is admin-only: nothing is loaded otherwise; a role change aborts and clears all data. */
+  isAdmin: boolean;
   isAnyModalOpen: () => boolean;
   /**
    * Called with freshly loaded documents.
@@ -14,17 +16,26 @@ interface UseOutcomeDataOptions {
   onDocumentsLoaded?: (documents: OutcomeDocument[]) => boolean;
 }
 
+const ADMIN_ONLY_CATALOG_MESSAGE =
+  'Каталог списания доступен только администратору. Обновите страницу или войдите заново.';
+
 /**
  * Loads outcome documents and active catalog products from Supabase.
+ * - The catalog comes from the role-aware rpc_list_products (admin response with purchase prices,
+ *   all keyset pages or nothing); a failed load never yields a partial catalog.
  * - Each loader cancels its previous in-flight request (AbortController) and ignores stale responses.
- * - State is reset when the authenticated user changes.
+ * - State is reset (and requests aborted) when the authenticated user or the role changes;
+ *   nothing is loaded for a non-admin.
  * - Retry handlers restore focus to the retry button on failure or to the add button on success.
  */
 export const useOutcomeData = ({
   userId,
+  isAdmin,
   isAnyModalOpen,
   onDocumentsLoaded,
 }: UseOutcomeDataOptions) => {
+  const enabled = Boolean(userId) && isAdmin;
+
   const [documents, setDocuments] = useState<OutcomeDocument[]>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState<boolean>(true);
   const [documentsLoadError, setDocumentsLoadError] = useState<string | null>(null);
@@ -44,21 +55,28 @@ export const useOutcomeData = ({
     onDocumentsLoadedRef.current = onDocumentsLoaded;
   }, [onDocumentsLoaded]);
 
-  // Reset state on user switch or logout
-  const [prevUserId, setPrevUserId] = useState<string | null>(userId);
-  if (prevUserId !== userId) {
-    setPrevUserId(userId);
+  // Reset state on user switch, logout or role change: never keep data loaded under another role
+  const resetKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+  // Latest access key: a load started under a previous user / role never applies its result
+  const accessKeyRef = useRef(resetKey);
+  useEffect(() => {
+    accessKeyRef.current = resetKey;
+  }, [resetKey]);
+  const [prevResetKey, setPrevResetKey] = useState<string>(resetKey);
+  if (prevResetKey !== resetKey) {
+    setPrevResetKey(resetKey);
     setDocuments([]);
-    setIsLoadingDocuments(Boolean(userId));
+    setIsLoadingDocuments(enabled);
     setDocumentsLoadError(null);
     setIsDocumentsTruncated(false);
     setProducts([]);
-    setIsLoadingProducts(Boolean(userId));
+    setIsLoadingProducts(enabled);
     setProductsLoadError(null);
   }
 
   const loadDocuments = useCallback(async (isRetry = false) => {
-    if (!userId) return;
+    if (!enabled) return;
+    const requestAccessKey = `${userId ?? ''}|admin`;
 
     if (documentsAbortControllerRef.current) {
       documentsAbortControllerRef.current.abort();
@@ -78,7 +96,8 @@ export const useOutcomeData = ({
       if (
         !isMountedRef.current ||
         controller.signal.aborted ||
-        documentsAbortControllerRef.current !== controller
+        documentsAbortControllerRef.current !== controller ||
+        accessKeyRef.current !== requestAccessKey
       ) {
         return;
       }
@@ -137,10 +156,10 @@ export const useOutcomeData = ({
         }
       }
     }
-  }, [userId, isAnyModalOpen]);
+  }, [enabled, userId, isAnyModalOpen]);
 
   const loadProducts = useCallback(async (isRetry = false) => {
-    if (!userId) return;
+    if (!enabled) return;
 
     if (productsAbortControllerRef.current) {
       productsAbortControllerRef.current.abort();
@@ -155,7 +174,8 @@ export const useOutcomeData = ({
     let resSuccess = false;
 
     try {
-      const res = await warehouseApi.fetchProducts(controller.signal);
+      // All pages or nothing: a failed / inconsistent page never yields a partial catalog
+      const res = await warehouseApi.listCatalog(controller.signal);
       if (
         !isMountedRef.current ||
         controller.signal.aborted ||
@@ -165,9 +185,15 @@ export const useOutcomeData = ({
       }
 
       if (res.success) {
-        resSuccess = true;
-        setProductsLoadError(null);
-        setProducts(res.data);
+        const mapped = mapCatalogToOutcomeProducts(res.data);
+        if (mapped) {
+          resSuccess = true;
+          setProductsLoadError(null);
+          setProducts(mapped);
+        } else {
+          setProducts([]);
+          setProductsLoadError(ADMIN_ONLY_CATALOG_MESSAGE);
+        }
       } else {
         setProductsLoadError(res.error.message);
       }
@@ -208,16 +234,16 @@ export const useOutcomeData = ({
         }
       }
     }
-  }, [userId, isAnyModalOpen]);
+  }, [enabled, isAnyModalOpen]);
 
   const reloadAll = useCallback(async () => {
     await Promise.all([loadDocuments(), loadProducts()]);
   }, [loadDocuments, loadProducts]);
 
-  // Lifecycle & data loading
+  // Lifecycle & data loading; a user OR role change aborts everything and reloads
   useEffect(() => {
     isMountedRef.current = true;
-    if (!userId) return;
+    if (!enabled) return;
 
     void Promise.resolve().then(() => {
       if (isMountedRef.current) {
@@ -235,7 +261,7 @@ export const useOutcomeData = ({
         productsAbortControllerRef.current.abort();
       }
     };
-  }, [userId, loadDocuments, loadProducts]);
+  }, [enabled, resetKey, loadDocuments, loadProducts]);
 
   return {
     documents,

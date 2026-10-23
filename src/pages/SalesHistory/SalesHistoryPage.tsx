@@ -31,7 +31,7 @@ import styles from './SalesHistoryPage.module.scss';
  *   keeps the exact UI semantics; search / payment / sort / pagination are client-side.
  */
 export const SalesHistoryPage = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const userId = user?.id ?? null;
 
   // Filters state
@@ -61,10 +61,11 @@ export const SalesHistoryPage = () => {
   }, [saleToView]);
   const isModalOpen = useCallback(() => Boolean(saleToViewRef.current), []);
 
-  // Close the receipt on user switch or logout
-  const [prevUserId, setPrevUserId] = useState<string | null>(userId);
-  if (prevUserId !== userId) {
-    setPrevUserId(userId);
+  // Close the receipt on user switch, logout or role change
+  const accessKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+  const [prevAccessKey, setPrevAccessKey] = useState<string>(accessKey);
+  if (prevAccessKey !== accessKey) {
+    setPrevAccessKey(accessKey);
     setSaleToView(null);
   }
 
@@ -106,6 +107,7 @@ export const SalesHistoryPage = () => {
 
   const { sales, isLoading, loadError, isTruncated, hasAnySales, retry } = useSalesHistoryData({
     userId,
+    isAdmin,
     range: serverRange,
     isModalOpen,
   });
@@ -286,6 +288,7 @@ export const SalesHistoryPage = () => {
         sale={saleToView}
         onClose={handleCloseViewModal}
         fallbackFocusSelector="[data-sales-history-search]"
+        showCostDetails={isAdmin}
       />
     </div>
   );

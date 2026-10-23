@@ -193,7 +193,12 @@ export const calculateSalesReportSummary = (
     revenueCents += toCents(sale.totalAmount);
     unitsSold += getSaleUnitsCount(sale);
     totalDiscountCents += toCents(getSaleTotalDiscount(sale));
-    grossProfitCents += toCents(sale.profitAmount);
+    if (sale.profitAmount === null) {
+      // Receipt without cost data (cashier view): gross profit cannot be computed
+      hasIncompleteCostSnapshot = true;
+    } else {
+      grossProfitCents += toCents(sale.profitAmount);
+    }
 
     for (const item of sale.items) {
       if (

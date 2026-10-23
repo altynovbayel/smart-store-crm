@@ -5,6 +5,8 @@ import type { Sale, SalesHistoryServerRange } from '../../../types';
 
 interface UseSalesHistoryDataOptions {
   userId: string | null;
+  /** A role change clears loaded receipts and reloads them (like a user switch). */
+  isAdmin: boolean;
   range: SalesHistoryServerRange;
   isModalOpen: () => boolean;
 }
@@ -19,7 +21,7 @@ interface UseSalesHistoryDataOptions {
  * - `hasAnySales` distinguishes "no sales at all" from "nothing in this period": it is derived
  *   from loaded data and, only when a ranged server load is empty, from a lightweight `id` probe.
  */
-export const useSalesHistoryData = ({ userId, range, isModalOpen }: UseSalesHistoryDataOptions) => {
+export const useSalesHistoryData = ({ userId, isAdmin, range, isModalOpen }: UseSalesHistoryDataOptions) => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(userId) && range.kind !== 'invalid');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -41,10 +43,12 @@ export const useSalesHistoryData = ({ userId, range, isModalOpen }: UseSalesHist
   // Reset on user switch / logout and on server range change (render-phase state adjustment)
   const [prevUserId, setPrevUserId] = useState<string | null>(userId);
   const [prevRangeKey, setPrevRangeKey] = useState<string>(range.key);
-  if (prevUserId !== userId || prevRangeKey !== range.key) {
+  const [prevIsAdmin, setPrevIsAdmin] = useState<boolean>(isAdmin);
+  if (prevUserId !== userId || prevRangeKey !== range.key || prevIsAdmin !== isAdmin) {
     const userChanged = prevUserId !== userId;
     setPrevUserId(userId);
     setPrevRangeKey(range.key);
+    setPrevIsAdmin(isAdmin);
     setSales([]);
     setIsTruncated(false);
     setLoadError(null);
@@ -168,7 +172,7 @@ export const useSalesHistoryData = ({ userId, range, isModalOpen }: UseSalesHist
     [userId, isModalOpen, probeHasAnySales]
   );
 
-  // Load on mount, on user change and on server range change
+  // Load on mount, on user / role change and on server range change
   useEffect(() => {
     if (!userId || range.kind === 'invalid') {
       abortControllerRef.current?.abort();
@@ -186,7 +190,7 @@ export const useSalesHistoryData = ({ userId, range, isModalOpen }: UseSalesHist
       abortControllerRef.current?.abort();
       probeControllerRef.current?.abort();
     };
-  }, [userId, range.key, range.kind, loadSales]);
+  }, [userId, isAdmin, range.key, range.kind, loadSales]);
 
   // Abort everything on unmount
   useEffect(() => {

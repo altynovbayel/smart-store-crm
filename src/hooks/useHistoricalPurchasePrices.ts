@@ -7,12 +7,12 @@ const EMPTY_PRICES: Record<string, HistoricalPriceResult> = {};
 export type HistoricalPriceStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 /**
- * Module-level fetcher (must be a stable reference) resolving prices exactly like the server RPC.
+ * Module-level fetcher (must be a stable reference) returning prices resolved by the server
+ * exactly like the document RPC; all-or-nothing (never a partial set of prices).
  */
 export type HistoricalPriceFetcher = (
   productIds: string[],
   occurredAt: string,
-  activeProducts: Product[],
   signal?: AbortSignal
 ) => Promise<
   | { success: true; data: Record<string, HistoricalPriceResult> }
@@ -23,13 +23,17 @@ interface UseHistoricalPurchasePricesOptions {
   isOpen: boolean;
   documentDate: string;
   items: ReadonlyArray<{ productId: string }>;
+  /**
+   * Loaded catalog. Not sent to the server; a new catalog instance (reload after a write-off or
+   * a refused one) re-requests prices, because the catalog_fallback price may have changed.
+   */
   activeProducts: Product[];
   fetchPrices: HistoricalPriceFetcher;
 }
 
 /**
- * Loads effective historical purchase prices (as resolved by the document RPCs:
- * rpc_create_outcome_document / rpc_create_sale) for the selected products at the document date.
+ * Loads effective historical purchase prices (as resolved by the document RPC
+ * rpc_create_outcome_document) for the selected products at the document date.
  *
  * Race protection: every new request aborts the previous one (AbortController) and carries
  * a monotonically increasing request id; a response is applied only if its controller is not
@@ -99,7 +103,6 @@ export const useHistoricalPurchasePrices = ({
         const res = await fetchPrices(
           selectedProductIds,
           parsedDate.toISOString(),
-          activeProducts,
           controller.signal
         );
 
@@ -131,8 +134,12 @@ export const useHistoricalPurchasePrices = ({
     };
   }, [isOpen, documentDate, selectedProductIdsKey, activeProducts, fetchPrices]);
 
-  const historicalPrices =
-    pricesState.requestKey === currentRequestKey ? pricesState.prices : EMPTY_PRICES;
+  const isCurrentResult = pricesState.requestKey === currentRequestKey;
+  const historicalPrices = isCurrentResult ? pricesState.prices : EMPTY_PRICES;
+  // Until the request for the current selection has started, a "ready" from the previous
+  // selection is reported as loading (no total computed from prices of another date / product set)
+  const effectiveStatus: HistoricalPriceStatus =
+    priceStatus === 'ready' && !isCurrentResult ? 'loading' : priceStatus;
 
-  return { historicalPrices, priceStatus, priceErrorMessage };
+  return { historicalPrices, priceStatus: effectiveStatus, priceErrorMessage };
 };

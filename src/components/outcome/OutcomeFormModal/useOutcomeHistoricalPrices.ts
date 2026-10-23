@@ -14,8 +14,8 @@ interface UseOutcomeHistoricalPricesOptions {
   activeProducts: Product[];
 }
 
-const fetchOutcomePrices: HistoricalPriceFetcher = (productIds, occurredAt, activeProducts, signal) =>
-  outcomeApi.fetchHistoricalPurchasePrices(productIds, occurredAt, activeProducts, signal);
+const fetchOutcomePrices: HistoricalPriceFetcher = (productIds, occurredAt, signal) =>
+  outcomeApi.fetchHistoricalPurchasePrices(productIds, occurredAt, signal);
 
 /**
  * Historical purchase prices for the outcome form (see useHistoricalPurchasePrices for race protection).

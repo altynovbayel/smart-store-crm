@@ -1,4 +1,4 @@
-import type { Product } from './product';
+import type { WarehouseCatalogProduct } from './warehouse';
 import type { MappedApiError } from './apiError';
 
 export type PaymentMethod = 'cash' | 'card' | 'transfer';
@@ -27,14 +27,17 @@ export interface SaleItem {
   sku: string;
   quantity: number;
   unitPrice: number;
-  purchasePriceSnapshot: number;
+  /** Admin only: null when the server did not return cost data (cashier). Never 0 as a substitute. */
+  purchasePriceSnapshot: number | null;
   grossAmount: number;
   discountType: DiscountType;
   discountValue: number;
   discountAmount: number;
   finalAmount: number;
-  costAmount: number;
-  profitAmount: number;
+  /** Admin only (null for a cashier). */
+  costAmount: number | null;
+  /** Admin only (null for a cashier). */
+  profitAmount: number | null;
   /** Barcode snapshot at the moment of sale (server receipts only). */
   barcode?: string;
   /**
@@ -61,8 +64,10 @@ export interface Sale {
   receiptDiscountValue: number;
   receiptDiscountAmount: number;
   totalAmount: number;
-  costAmount: number;
-  profitAmount: number;
+  /** Admin only (null for a cashier). */
+  costAmount: number | null;
+  /** Admin only (null for a cashier). */
+  profitAmount: number | null;
   receivedAmount?: number;
   changeAmount?: number;
   responsiblePerson: string;
@@ -115,24 +120,45 @@ export interface SaleSummary {
   todayRevenue: number;
   todaySalesCount: number;
   todayAverageCheck: number;
-  todayProfit: number;
+  /** Admin only; null → profit is not shown (cashier). Never replaced by 0. */
+  todayProfit: number | null;
 }
 
+/**
+ * Catalog product as used by the sale form (search, scanning, stock checks, selling price).
+ * Deliberately has NO purchase price: cost and profit of a sale are determined by the server
+ * (rpc_create_sale), never by the browser — a cashier's catalog does not contain them at all.
+ */
+export type SaleCatalogProduct = Pick<
+  WarehouseCatalogProduct,
+  | 'id'
+  | 'sku'
+  | 'barcode'
+  | 'name'
+  | 'category'
+  | 'categoryLabel'
+  | 'sellingPrice'
+  | 'stock'
+  | 'minStockThreshold'
+  | 'status'
+  | 'isArchived'
+  | 'unit'
+  | 'iconType'
+>;
+
+/** Line preview of the sale form (selling side only; cost / profit are server-side). */
 export interface SaleItemCalculations {
   quantity: number;
   unitPrice: number;
   grossAmount: number;
   discountAmount: number;
   finalAmount: number;
-  costAmount: number;
-  profitAmount: number;
   grossCents: number;
   discountCents: number;
   finalCents: number;
-  costCents: number;
-  profitCents: number;
 }
 
+/** Receipt preview of the sale form (selling side only; cost / profit are server-side). */
 export interface SaleTotals {
   totalUnits: number;
   subtotal: number;
@@ -140,8 +166,6 @@ export interface SaleTotals {
   itemsFinal: number;
   receiptDiscountAmount: number;
   totalAmount: number;
-  costAmount: number;
-  profitAmount: number;
   changeAmount: number;
   isOverflow: boolean;
 }
@@ -154,7 +178,7 @@ export interface SaleValidationResult {
 
 export interface BarcodeScanResult {
   success: boolean;
-  product?: Product;
+  product?: SaleCatalogProduct;
   updatedItems?: SaleFormItemState[];
   message?: string;
   error?: string;
@@ -191,11 +215,11 @@ export interface CreateSaleInput {
   items: SaleItemInput[];
 }
 
+/** Result of rpc_create_sale as used by the client: no cost / profit (server-only values). */
 export interface CreateSaleResult {
   id: string;
   receiptNumber: string;
   totalAmount: number;
-  profitAmount: number;
   changeAmount: number | null;
   itemsCount: number;
 }
@@ -204,13 +228,11 @@ export interface FetchSalesOptions {
   signal?: AbortSignal;
   /** Safety cap of receipts loaded into memory (default 5000). */
   limit?: number;
-  /** Inclusive ISO lower bound for sold_at (future Sales History range queries). */
+  /** Inclusive ISO lower bound for sold_at. */
   soldFrom?: string;
-  /** Inclusive ISO upper bound for sold_at. */
-  soldTo?: string;
   /**
-   * Exclusive ISO upper bound for sold_at (PostgREST `lt`): calendar ranges are loaded
-   * as [soldFrom, soldBefore) with soldBefore = start of the day after the last day.
+   * Exclusive ISO upper bound for sold_at: calendar ranges are loaded as [soldFrom, soldBefore)
+   * with soldBefore = start of the day after the last day.
    */
   soldBefore?: string;
 }

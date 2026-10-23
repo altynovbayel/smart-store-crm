@@ -711,6 +711,26 @@ export type Database = {
         Args: { p_low_stock_limit?: number }
         Returns: Json
       }
+      rpc_get_income_receipt: {
+        Args: { p_receipt_id: string }
+        Returns: Json
+      }
+      rpc_get_my_profile: {
+        Args: never
+        Returns: Json
+      }
+      rpc_get_outcome_document: {
+        Args: { p_document_id: string }
+        Returns: Json
+      }
+      rpc_get_purchase_prices_at: {
+        Args: { p_occurred_at: string; p_product_ids: string[] }
+        Returns: Json
+      }
+      rpc_get_sale: {
+        Args: { p_sale_id: string }
+        Returns: Json
+      }
       rpc_get_sales_report: {
         Args: { p_day_bounds: string[]; p_top_limit?: number }
         Returns: Json
@@ -721,6 +741,26 @@ export type Database = {
       }
       rpc_get_warehouse_report_export: {
         Args: { p_after_id?: string; p_limit?: number; p_snapshot_at?: string }
+        Returns: Json
+      }
+      rpc_has_any_sales: {
+        Args: never
+        Returns: boolean
+      }
+      rpc_list_income_receipts: {
+        Args: {
+          p_after_id?: string
+          p_after_received_at?: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      rpc_list_outcome_documents: {
+        Args: {
+          p_after_id?: string
+          p_after_occurred_at?: string
+          p_limit?: number
+        }
         Returns: Json
       }
       rpc_list_product_movements: {
@@ -738,6 +778,17 @@ export type Database = {
           p_after_id?: string
           p_include_archived?: boolean
           p_limit?: number
+        }
+        Returns: Json
+      }
+      rpc_list_sales: {
+        Args: {
+          p_after_created_at?: string
+          p_after_id?: string
+          p_after_sold_at?: string
+          p_limit?: number
+          p_sold_before?: string
+          p_sold_from?: string
         }
         Returns: Json
       }

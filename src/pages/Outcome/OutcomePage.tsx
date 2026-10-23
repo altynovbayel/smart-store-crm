@@ -37,9 +37,10 @@ const DEFAULT_FILTERS: OutcomeFilters = {
 const PAGE_SIZE = 8;
 
 /**
- * OutcomePage connects directly to Supabase via outcomeApi and warehouseApi.
+ * OutcomePage connects to Supabase via outcomeApi and useOutcomeData.
  * - Outcome documents and line items are loaded from public.outcome_documents and public.outcome_items.
- * - Active products are loaded from public.products (is_archived = false).
+ * - Active products come from the role-aware rpc_list_products (admin response with purchase
+ *   prices, all keyset pages or nothing).
  * - Write-off operations strictly execute transactional PostgreSQL RPC rpc_create_outcome_document.
  * - Accessible strictly by active administrators (route guard + in-page isAdmin redirect).
  */
@@ -118,7 +119,12 @@ export const OutcomePage = () => {
     loadDocuments,
     loadProducts,
     reloadAll,
-  } = useOutcomeData({ userId, isAnyModalOpen, onDocumentsLoaded: handleDocumentsLoaded });
+  } = useOutcomeData({
+    userId,
+    isAdmin,
+    isAnyModalOpen,
+    onDocumentsLoaded: handleDocumentsLoaded,
+  });
 
   const { isResolvingPending, handleResolvePending, handleCreateOutcome } = useOutcomeSubmission({
     userId,

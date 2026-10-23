@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, type RefObject } from 'react';
-import type { Product, SaleFormItemState } from '../../../types';
+import type { SaleCatalogProduct, SaleFormItemState } from '../../../types';
 import { processBarcodeScan } from '../../../utils/saleCalculations';
 
 interface UseSaleBarcodeScannerOptions {
   isOpen: boolean;
-  activeProducts: Product[];
+  activeProducts: readonly SaleCatalogProduct[];
   items: SaleFormItemState[];
   isSubmittingRef: RefObject<boolean>;
   /** Applies scanned rows (new row, filled empty row or incremented quantity). */

@@ -1,25 +1,26 @@
 import { supabase } from '../../lib/supabase';
+import type { Database } from '../../types/database.types';
 import type {
   OutcomeDocument,
-  OutcomeItem,
   CreateOutcomeDocumentInput,
   CreateOutcomeDocumentResult,
   FetchOutcomeDocumentsResult,
   OutcomeApiResult,
-  Product,
   HistoricalPriceResult,
+  GetPurchasePricesAtRpcArgs,
 } from '../../types';
+import { PURCHASE_PRICES_RPC_MAX_PRODUCTS } from '../../types';
 import { minorToSom } from '../../utils/moneyUtils';
-import { resolveHistoricalPurchasePrices } from '../../utils/outcomePriceHistory';
-import { fetchPriceHistoryPoints } from '../shared/priceHistoryQuery';
+import { mapPurchasePricesResponse, PurchasePricesDataError } from './purchasePricesRpcMappers';
+import { mapOutcomeFormToRpcArgs } from './outcomeMappers';
 import {
-  mapOutcomeDocumentRowToDocument,
-  mapOutcomeItemRowToItem,
-  mapOutcomeFormToRpcArgs,
-  type OutcomeDocumentWithItemsRow,
-  type OutcomeItemRow,
-} from './outcomeMappers';
-import { mapOutcomeError } from './outcomeErrorMapper';
+  OutcomeDataError,
+  isBeforeInOutcomeOrder,
+  mapGetOutcomeDocumentResponse,
+  mapOutcomeDocumentsPage,
+  type OutcomeDocumentsCursor,
+} from './outcomeRpcMappers';
+import { mapOutcomeError, mapPurchasePricesError } from './outcomeErrorMapper';
 
 export type {
   CreateOutcomeDocumentInput,
@@ -37,9 +38,26 @@ export type {
  */
 export const DEFAULT_OUTCOME_FETCH_LIMIT = 5000;
 
+/** Server maximum of documents per rpc_list_outcome_documents page. */
+export const OUTCOME_RPC_MAX_PAGE_SIZE = 200;
+/** Hard stop against a server that never ends pagination. */
+const MAX_OUTCOME_RPC_PAGES = 1000;
+
+const abortIfNeeded = (signal?: AbortSignal): void => {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+};
+
+const outcomeDataError = (err: OutcomeDataError): OutcomeApiResult<never> => ({
+  // Malformed data: the outcome of a pending write-off stays unknown (pending UUID is preserved)
+  success: false,
+  error: { kind: 'internal', message: err.message },
+});
+
 /**
  * Repository / API layer for Outcome (write-off) operations via Supabase.
- * - All SELECT queries are read-only and use joined embedded items to prevent N+1 queries.
+ * - Documents are read through the admin-only read RPCs rpc_list_outcome_documents /
+ *   rpc_get_outcome_document (documents with their lines; no direct SELECT on
+ *   outcome_documents / outcome_items).
  * - All mutations (creating outcome write-off) strictly execute via transactional
  *   PostgreSQL RPC `rpc_create_outcome_document`.
  * - Direct INSERT/UPDATE/DELETE to outcome_documents, outcome_items, products,
@@ -47,59 +65,65 @@ export const DEFAULT_OUTCOME_FETCH_LIMIT = 5000;
  */
 export const outcomeApi = {
   /**
-   * Fetches outcome documents with their embedded line items.
-   * Sorted chronologically (occurred_at DESC, id DESC).
-   * Safe chunked retrieval prevents PostgREST 1000 row limits.
+   * Fetches write-off documents with their lines via rpc_list_outcome_documents
+   * (occurred_at DESC, id DESC), page by page up to `maxLimit` documents:
+   * - every page is strictly validated (exact fields, totals, order, unique ids, cursor);
+   * - the next_cursor strings are passed back unchanged (no Date conversion);
+   * - the first document of a page must follow the previous cursor;
+   * - all-or-nothing: any failed or malformed page returns an error and no partial list.
+   * isTruncated is true when the limit was reached and the server still had more documents.
+   * AbortError is re-thrown so callers can ignore cancelled loads.
    */
   async fetchOutcomeDocuments(
     signal?: AbortSignal,
     maxLimit: number = DEFAULT_OUTCOME_FETCH_LIMIT
   ): Promise<OutcomeApiResult<FetchOutcomeDocumentsResult>> {
     try {
-      const allRows: OutcomeDocumentWithItemsRow[] = [];
-      const batchSize = 1000;
-      let from = 0;
+      const documents: OutcomeDocument[] = [];
+      const seenDocumentIds = new Set<string>();
+      const seenLineIds = new Set<string>();
+      let cursor: OutcomeDocumentsCursor | null = null;
       let hasMore = true;
 
-      while (hasMore && allRows.length < maxLimit) {
-        const currentBatchLimit = Math.min(batchSize, maxLimit - allRows.length);
-        let query = supabase
-          .from('outcome_documents')
-          .select(`
-            *,
-            items:outcome_items(*)
-          `)
-          .order('occurred_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + currentBatchLimit - 1);
-
-        if (signal) {
-          query = query.abortSignal(signal);
+      for (let pageIndex = 0; hasMore && documents.length < maxLimit; pageIndex++) {
+        if (pageIndex >= MAX_OUTCOME_RPC_PAGES) throw new OutcomeDataError();
+        const limit = Math.min(OUTCOME_RPC_MAX_PAGE_SIZE, maxLimit - documents.length);
+        const args: Database['public']['Functions']['rpc_list_outcome_documents']['Args'] = {
+          p_limit: limit,
+        };
+        if (cursor !== null) {
+          args.p_after_occurred_at = cursor.occurredAt;
+          args.p_after_id = cursor.id;
         }
 
-        const { data, error, status } = await query;
-
+        let request = supabase.rpc('rpc_list_outcome_documents', args);
+        if (signal) {
+          request = request.abortSignal(signal);
+        }
+        const { data, error, status } = await request;
+        abortIfNeeded(signal);
         if (error) {
           return { success: false, error: mapOutcomeError({ ...error, status }) };
         }
 
-        const rows = (data ?? []) as unknown as OutcomeDocumentWithItemsRow[];
-        allRows.push(...rows);
-
-        if (rows.length < currentBatchLimit || allRows.length >= maxLimit) {
-          hasMore = false;
-        } else {
-          from += rows.length;
+        const page = mapOutcomeDocumentsPage(data, limit, seenDocumentIds, seenLineIds);
+        const first = page.order[0];
+        if (cursor !== null && first && !isBeforeInOutcomeOrder(cursor.order, first)) {
+          throw new OutcomeDataError();
         }
+        // A page with a cursor but no documents would never advance
+        if (page.nextCursor !== null && page.documents.length === 0) throw new OutcomeDataError();
+
+        documents.push(...page.documents);
+        cursor = page.nextCursor;
+        hasMore = cursor !== null;
       }
 
-      const isTruncated = allRows.length >= maxLimit;
-      const documents = allRows.map(mapOutcomeDocumentRowToDocument);
       return {
         success: true,
         data: {
           documents,
-          isTruncated,
+          isTruncated: hasMore,
           totalFetched: documents.length,
         },
       };
@@ -107,84 +131,37 @@ export const outcomeApi = {
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw err;
       }
+      if (err instanceof OutcomeDataError) return outcomeDataError(err);
       return { success: false, error: mapOutcomeError(err) };
     }
   },
 
   /**
-   * Fetches a single outcome document by its UUID including items.
-   * Returns data: null when not found.
+   * Fetches a single write-off document with its lines via rpc_get_outcome_document.
+   * Returns data: null when the document does not exist (this does NOT prove that an
+   * unconfirmed write-off failed — the caller retries with the same id).
    */
   async fetchOutcomeDocumentById(
     documentId: string,
     signal?: AbortSignal
   ): Promise<OutcomeApiResult<OutcomeDocument | null>> {
     try {
-      let query = supabase
-        .from('outcome_documents')
-        .select(`
-          *,
-          items:outcome_items(*)
-        `)
-        .eq('id', documentId);
-
+      let request = supabase.rpc('rpc_get_outcome_document', { p_document_id: documentId });
       if (signal) {
-        query = query.abortSignal(signal);
+        request = request.abortSignal(signal);
       }
-
-      const { data, error, status } = await query.maybeSingle();
-
+      const { data, error, status } = await request;
+      abortIfNeeded(signal);
       if (error) {
         return { success: false, error: mapOutcomeError({ ...error, status }) };
       }
 
-      if (!data) {
-        return { success: true, data: null };
-      }
-
-      const document = mapOutcomeDocumentRowToDocument(
-        data as unknown as OutcomeDocumentWithItemsRow
-      );
-      return { success: true, data: document };
+      return { success: true, data: mapGetOutcomeDocumentResponse(data, documentId) };
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw err;
       }
-      return { success: false, error: mapOutcomeError(err) };
-    }
-  },
-
-  /**
-   * Fetches items belonging to a specific outcome document.
-   */
-  async fetchOutcomeDocumentItems(
-    documentId: string,
-    signal?: AbortSignal
-  ): Promise<OutcomeApiResult<OutcomeItem[]>> {
-    try {
-      let query = supabase
-        .from('outcome_items')
-        .select('*')
-        .eq('outcome_document_id', documentId)
-        .order('id', { ascending: true });
-
-      if (signal) {
-        query = query.abortSignal(signal);
-      }
-
-      const { data, error, status } = await query;
-
-      if (error) {
-        return { success: false, error: mapOutcomeError({ ...error, status }) };
-      }
-
-      const rows = (data ?? []) as unknown as OutcomeItemRow[];
-      const items = rows.map(mapOutcomeItemRowToItem);
-      return { success: true, data: items };
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        throw err;
-      }
+      if (err instanceof OutcomeDataError) return outcomeDataError(err);
       return { success: false, error: mapOutcomeError(err) };
     }
   },
@@ -272,37 +249,55 @@ export const outcomeApi = {
   },
 
   /**
-   * Batch fetches effective historical purchase prices for a set of products at a specific timestamp.
-   * Resolution mirrors `rpc_create_outcome_document` exactly (see resolveHistoricalPurchasePrices).
-   * Display-only: the server recalculates the snapshot price inside the RPC transaction.
+   * Effective purchase prices of the selected products at the document timestamp via the admin-only
+   * rpc_get_purchase_prices_at (resolved on the server exactly like rpc_create_outcome_document:
+   * exact history → earliest history → current catalog price). Display-only preview: the final
+   * cost snapshot is always determined by rpc_create_outcome_document.
+   * - Distinct ids are requested in sorted batches of at most 500 (server limit), one after another;
+   * - every response is strictly validated against its batch and the requested instant;
+   * - all-or-nothing: any failed or malformed batch returns an error and no prices.
+   * AbortError is re-thrown so callers can ignore cancelled loads.
    */
   async fetchHistoricalPurchasePrices(
-    productIds: string[],
+    productIds: readonly string[],
     occurredAt: string,
-    activeProducts: Product[],
     signal?: AbortSignal
   ): Promise<OutcomeApiResult<Record<string, HistoricalPriceResult>>> {
     try {
-      const uniqueIds = Array.from(new Set(productIds.filter(Boolean)));
+      const uniqueIds = Array.from(
+        new Set(productIds.filter(Boolean).map((id) => id.toLowerCase()))
+      ).sort();
       if (uniqueIds.length === 0) {
         return { success: true, data: {} };
       }
 
-      const historyRes = await fetchPriceHistoryPoints(uniqueIds, signal);
-      if (!historyRes.success) {
-        return { success: false, error: mapOutcomeError(historyRes.error) };
-      }
-      const allRows = historyRes.rows;
+      const prices: Record<string, HistoricalPriceResult> = {};
+      for (let from = 0; from < uniqueIds.length; from += PURCHASE_PRICES_RPC_MAX_PRODUCTS) {
+        const batch = uniqueIds.slice(from, from + PURCHASE_PRICES_RPC_MAX_PRODUCTS);
+        const args: GetPurchasePricesAtRpcArgs = { p_product_ids: batch, p_occurred_at: occurredAt };
 
-      return {
-        success: true,
-        data: resolveHistoricalPurchasePrices(uniqueIds, allRows, occurredAt, activeProducts),
-      };
+        let request = supabase.rpc('rpc_get_purchase_prices_at', args);
+        if (signal) {
+          request = request.abortSignal(signal);
+        }
+        const { data, error, status } = await request;
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (error) {
+          return { success: false, error: mapPurchasePricesError({ ...error, status }) };
+        }
+
+        Object.assign(prices, mapPurchasePricesResponse(data, batch, occurredAt));
+      }
+
+      return { success: true, data: prices };
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw err;
       }
-      return { success: false, error: mapOutcomeError(err) };
+      if (err instanceof PurchasePricesDataError) {
+        return { success: false, error: { kind: 'internal', message: err.message } };
+      }
+      return { success: false, error: mapPurchasePricesError(err) };
     }
   },
 };

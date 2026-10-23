@@ -12,6 +12,12 @@ export interface SaleViewModalProps {
   sale: Sale | null;
   onClose: () => void;
   fallbackFocusSelector?: string;
+  /**
+   * Cost and profit lines (admin only). Defaults to false, so a new usage never shows them by
+   * accident. Receipts come from rpc_list_sales / rpc_get_sale: a cashier payload has no cost
+   * fields at all (null in the model), so the lines are also skipped whenever the values are null.
+   */
+  showCostDetails?: boolean;
 }
 
 const getPaymentBadgeClass = (method: PaymentMethod): string => {
@@ -32,6 +38,7 @@ export const SaleViewModal = ({
   sale,
   onClose,
   fallbackFocusSelector = '[data-add-sale-btn]',
+  showCostDetails = false,
 }: SaleViewModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -277,14 +284,18 @@ export const SaleViewModal = ({
                 {formatCurrency(sale.totalAmount)}
               </span>
             </div>
-            <div className={styles.summaryRow} style={{ marginTop: 4 }}>
-              <span>Себестоимость товаров:</span>
-              <span>{formatCurrency(sale.costAmount)}</span>
-            </div>
-            <div className={styles.summaryProfitRow}>
-              <span>Расчетная прибыль:</span>
-              <span>{formatCurrency(sale.profitAmount)}</span>
-            </div>
+            {showCostDetails && sale.costAmount !== null && sale.profitAmount !== null && (
+              <>
+                <div className={styles.summaryRow} style={{ marginTop: 4 }}>
+                  <span>Себестоимость товаров:</span>
+                  <span>{formatCurrency(sale.costAmount)}</span>
+                </div>
+                <div className={styles.summaryProfitRow}>
+                  <span>Расчетная прибыль:</span>
+                  <span>{formatCurrency(sale.profitAmount)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

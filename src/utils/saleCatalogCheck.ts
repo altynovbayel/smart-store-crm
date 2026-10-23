@@ -1,4 +1,4 @@
-import type { Product, SaleItemInput } from '../types';
+import type { SaleCatalogProduct, SaleItemInput } from '../types';
 import { amountToMinor } from './saleMinorCalculations';
 
 export type SaleCatalogChange =
@@ -12,7 +12,7 @@ export type SaleCatalogChange =
  */
 export const detectSaleCatalogChanges = (
   items: readonly SaleItemInput[],
-  freshCatalog: readonly Product[]
+  freshCatalog: readonly SaleCatalogProduct[]
 ): SaleCatalogChange[] => {
   const changes: SaleCatalogChange[] = [];
 

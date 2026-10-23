@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   PendingSaleOperation,
-  Product,
+  SaleCatalogProduct,
   SaleSubmitPayload,
   SaleSubmitResult,
 } from '../../../types';
@@ -22,7 +22,7 @@ interface UseSaleSubmissionOptions {
   clearPending: (ownerUserId: string, expectedId: string) => void;
   reloadAll: () => Promise<void>;
   /** Reloads the active catalog; resolves with the fresh products or null on failure. */
-  refreshProducts: () => Promise<Product[] | null>;
+  refreshProducts: () => Promise<SaleCatalogProduct[] | null>;
   notify: (message: string) => void;
   isAnyModalOpen: () => boolean;
 }

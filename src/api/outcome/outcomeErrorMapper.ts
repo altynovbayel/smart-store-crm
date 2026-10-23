@@ -212,3 +212,46 @@ export const mapOutcomeError = (error: unknown): MappedOutcomeError => {
       };
   }
 };
+
+/**
+ * Maps a failure of the read-only price preview (rpc_get_purchase_prices_at). Nothing is written
+ * here, so the messages never mention an unconfirmed operation; the final cost is always
+ * resolved by rpc_create_outcome_document.
+ */
+export const mapPurchasePricesError = (error: unknown): MappedOutcomeError => {
+  switch (classifyOutcomeError(error)) {
+    case 'auth':
+      return isSessionAuthFailure(error)
+        ? {
+            kind: 'auth',
+            message: 'Сессия истекла. Выполните вход заново, чтобы увидеть себестоимость.',
+          }
+        : {
+            kind: 'auth',
+            message:
+              'Нет прав на просмотр закупочных цен: требуется активный администратор. Обновите страницу или войдите заново.',
+          };
+    case 'network':
+      return {
+        kind: 'network',
+        message:
+          'Не удалось загрузить закупочные цены: ошибка сети. Себестоимость будет рассчитана сервером при проведении.',
+      };
+    case 'domain':
+      return readErrorSignals(error)?.code === 'P0002'
+        ? {
+            kind: 'domain',
+            message:
+              'Один или несколько выбранных товаров не найдены в каталоге. Обновите каталог и выберите товары заново.',
+          }
+        : {
+            kind: 'domain',
+            message: 'Сервер отклонил запрос закупочных цен. Себестоимость будет рассчитана при проведении.',
+          };
+    default:
+      return {
+        kind: 'internal',
+        message: 'Не удалось загрузить закупочные цены. Себестоимость будет рассчитана сервером при проведении.',
+      };
+  }
+};

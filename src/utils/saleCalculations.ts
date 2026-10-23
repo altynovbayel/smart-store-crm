@@ -1,18 +1,16 @@
 import type {
   DiscountType,
   PaymentMethod,
-  Product,
+  SaleCatalogProduct,
   SaleFormData,
   SaleFormItemState,
   SaleItemCalculations,
   SaleTotals,
   SaleValidationResult,
   BarcodeScanResult,
-  HistoricalPriceResult,
 } from '../types';
 import { parseCustomDate, normalizeDocumentTimestamp } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
-import { getHistoricalPurchasePrice } from './productUtils';
 
 export const MAX_SAFE_PRICE = 100_000_000;
 
@@ -75,10 +73,13 @@ export const calculatePercentDiscountCents = (
   return Math.max(0, Math.min(baseCents, discountCents));
 };
 
+/**
+ * Selling-side line preview. Cost and profit are intentionally absent: rpc_create_sale takes the
+ * authoritative cost snapshot on the server, the browser (incl. a cashier's) never needs it.
+ */
 export const calculateSaleItemSubtotals = (
   rawQuantity: string,
   rawUnitPrice: string,
-  purchasePriceSnapshot: number,
   discountType: DiscountType,
   rawDiscountValue: string
 ): SaleItemCalculations | null => {
@@ -86,18 +87,11 @@ export const calculateSaleItemSubtotals = (
   const unitPrice = parseSalePrice(rawUnitPrice);
   const discountVal = parseSaleDiscountValue(rawDiscountValue, discountType);
 
-  if (
-    qty === null ||
-    unitPrice === null ||
-    discountVal === null ||
-    !Number.isFinite(purchasePriceSnapshot) ||
-    purchasePriceSnapshot < 0
-  ) {
+  if (qty === null || unitPrice === null || discountVal === null) {
     return null;
   }
 
   const unitPriceCents = toCents(unitPrice);
-  const costPriceCents = toCents(purchasePriceSnapshot);
 
   const lineGrossCents = qty * unitPriceCents;
   if (!Number.isSafeInteger(lineGrossCents)) return null;
@@ -114,10 +108,6 @@ export const calculateSaleItemSubtotals = (
   if (!Number.isSafeInteger(lineDiscountCents)) return null;
 
   const lineFinalCents = lineGrossCents - lineDiscountCents;
-  const lineCostCents = qty * costPriceCents;
-  if (!Number.isSafeInteger(lineCostCents)) return null;
-
-  const lineProfitCents = lineFinalCents - lineCostCents;
 
   return {
     quantity: qty,
@@ -125,49 +115,32 @@ export const calculateSaleItemSubtotals = (
     grossAmount: fromCents(lineGrossCents),
     discountAmount: fromCents(lineDiscountCents),
     finalAmount: fromCents(lineFinalCents),
-    costAmount: fromCents(lineCostCents),
-    profitAmount: fromCents(lineProfitCents),
     grossCents: lineGrossCents,
     discountCents: lineDiscountCents,
     finalCents: lineFinalCents,
-    costCents: lineCostCents,
-    profitCents: lineProfitCents,
   };
 };
 
 export type { SaleTotals };
 
+/** Selling-side receipt preview; the server recalculates every amount, incl. cost and profit. */
 export const calculateSaleTotals = (
   items: SaleFormItemState[],
-  activeProducts: Product[],
   receiptDiscountType: DiscountType,
   rawReceiptDiscountValue: string,
   paymentMethod: PaymentMethod,
-  rawReceivedAmount: string,
-  soldAt?: string,
-  historicalPrices?: Record<string, HistoricalPriceResult>
+  rawReceivedAmount: string
 ): SaleTotals => {
   let totalUnits = 0;
   let subtotalCents = 0;
   let itemDiscountTotalCents = 0;
   let itemsFinalCents = 0;
-  let costCents = 0;
   let isOverflow = false;
 
-  const soldAtTimestamp = normalizeDocumentTimestamp(soldAt);
-
   for (const it of items) {
-    const prod = activeProducts.find((p) => p.id === it.productId);
-    const resolvedCost = historicalPrices?.[it.productId];
-    const costPrice = resolvedCost
-      ? resolvedCost.purchasePrice
-      : prod
-        ? getHistoricalPurchasePrice(prod, soldAtTimestamp)
-        : 0;
     const itemCalc = calculateSaleItemSubtotals(
       it.rawQuantity,
       it.rawUnitPrice,
-      costPrice,
       it.discountType,
       it.rawDiscountValue
     );
@@ -177,28 +150,24 @@ export const calculateSaleTotals = (
       const gCents = itemCalc.grossCents;
       const dCents = itemCalc.discountCents;
       const fCents = itemCalc.finalCents;
-      const cCents = itemCalc.costCents;
 
       if (
         !Number.isSafeInteger(subtotalCents + gCents) ||
         !Number.isSafeInteger(itemDiscountTotalCents + dCents) ||
-        !Number.isSafeInteger(itemsFinalCents + fCents) ||
-        !Number.isSafeInteger(costCents + cCents)
+        !Number.isSafeInteger(itemsFinalCents + fCents)
       ) {
         isOverflow = true;
       } else {
         subtotalCents += gCents;
         itemDiscountTotalCents += dCents;
         itemsFinalCents += fCents;
-        costCents += cCents;
       }
     } else {
       const qty = parseSaleQuantity(it.rawQuantity);
       const unitPrice = parseSalePrice(it.rawUnitPrice);
       if (qty !== null && unitPrice !== null) {
         const lineGrossCents = qty * toCents(unitPrice);
-        const lineCostCents = qty * toCents(costPrice);
-        if (!Number.isSafeInteger(lineGrossCents) || !Number.isSafeInteger(lineCostCents)) {
+        if (!Number.isSafeInteger(lineGrossCents)) {
           isOverflow = true;
         }
       }
@@ -228,12 +197,8 @@ export const calculateSaleTotals = (
   }
 
   const totalAmountCents = Math.max(0, itemsFinalCents - receiptDiscountCents);
-  const profitCents = totalAmountCents - costCents;
 
-  if (
-    !Number.isSafeInteger(totalAmountCents) ||
-    !Number.isSafeInteger(profitCents)
-  ) {
+  if (!Number.isSafeInteger(totalAmountCents)) {
     isOverflow = true;
   }
 
@@ -259,8 +224,6 @@ export const calculateSaleTotals = (
     itemsFinal: isOverflow ? 0 : fromCents(itemsFinalCents),
     receiptDiscountAmount: isOverflow ? 0 : fromCents(receiptDiscountCents),
     totalAmount: isOverflow ? 0 : fromCents(totalAmountCents),
-    costAmount: isOverflow ? 0 : fromCents(costCents),
-    profitAmount: isOverflow ? 0 : fromCents(profitCents),
     changeAmount: isOverflow ? 0 : changeAmount,
     isOverflow,
   };
@@ -277,8 +240,7 @@ export const validateSaleForm = (
   receiptDiscountType: DiscountType,
   rawReceiptDiscountValue: string,
   items: SaleFormItemState[],
-  activeProducts: Product[],
-  historicalPrices?: Record<string, HistoricalPriceResult>,
+  activeProducts: readonly SaleCatalogProduct[],
   isRetrySubmission = false
 ): SaleValidationResult => {
   const errors: Record<string, string> = {};
@@ -310,7 +272,6 @@ export const validateSaleForm = (
   const validatedItems: SaleFormData['items'] = [];
   let subtotalCents = 0;
   let itemsFinalCents = 0;
-  let totalCostCents = 0;
 
   items.forEach((it, index) => {
     const rowNum = index + 1;
@@ -392,23 +353,9 @@ export const validateSaleForm = (
       return;
     }
 
-    // Cost bounds are checked only against the price the RPC will actually use.
-    // Without a resolved historical price (history not loaded) or on retry, an approximate
-    // catalog cost must not block the sale: the server validates the bounds.
-    const resolvedCost = historicalPrices?.[it.productId];
-    const lineCostCents =
-      resolvedCost && !isRetrySubmission ? qty * resolvedCost.purchasePriceMinor : 0;
-    if (
-      !Number.isSafeInteger(lineCostCents) ||
-      !Number.isSafeInteger(totalCostCents + lineCostCents)
-    ) {
-      errors[`item-${it.id}-qty`] = `Строка ${rowNum}: себестоимость превышает математический предел`;
-      return;
-    }
-
+    // Cost / profit bounds are validated by rpc_create_sale (server-side cost snapshot)
     subtotalCents += lineGrossCents;
     itemsFinalCents += lineFinalCents;
-    totalCostCents += lineCostCents;
 
     validatedItems.push({
       productId: it.productId,
@@ -452,9 +399,8 @@ export const validateSaleForm = (
     errors.totalAmount = 'Итоговая сумма продажи должна быть больше 0 сом';
   }
 
-  const profitCents = totalAmountCents - totalCostCents;
-  if (!Number.isSafeInteger(totalAmountCents) || !Number.isSafeInteger(profitCents)) {
-    errors.totalAmount = 'Расчёт прибыли чека превышает допустимый математический предел';
+  if (!Number.isSafeInteger(totalAmountCents)) {
+    errors.totalAmount = 'Сумма чека превышает допустимый математический предел';
   }
 
   // Cash payment validation
@@ -512,7 +458,7 @@ export type { BarcodeScanResult };
  */
 export const processBarcodeScan = (
   rawBarcode: string,
-  catalog: readonly Product[],
+  catalog: readonly SaleCatalogProduct[],
   currentItems: readonly SaleFormItemState[]
 ): BarcodeScanResult => {
   const normalizedBarcode = rawBarcode.trim();

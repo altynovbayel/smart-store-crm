@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Plus, CheckCircle2, X, AlertCircle, RotateCcw } from 'lucide-react';
 import type {
-  Product,
   IncomeFilters,
   IncomeReceipt,
   IncomeReceiptFormData,
@@ -10,7 +9,6 @@ import type {
 } from '../../types';
 import { useAuth } from '../../context';
 import { incomeApi } from '../../api/income';
-import { warehouseApi } from '../../api/warehouse';
 import { restoreFocusWithFallback } from '../../utils/focusUtils';
 import {
   calculateIncomeSummaryStats,
@@ -30,32 +28,44 @@ import {
   setPendingIncomeOperation,
   clearPendingIncomeOperation,
 } from '../../utils/pendingIncomeStorage';
+import { useIncomeCatalog } from './hooks/useIncomeCatalog';
 import styles from './IncomePage.module.scss';
 
 /**
- * IncomePage connects directly to Supabase via incomeApi and warehouseApi.
- * - Receipts and line items are loaded from public.income_receipts and public.income_items.
- * - Active products are loaded from public.products (is_archived = false).
+ * IncomePage connects to Supabase via incomeApi and useIncomeCatalog.
+ * - Receipts with their lines come from the admin-only rpc_list_income_receipts (cursor pages
+ *   up to 5000 receipts, all-or-nothing); recovery uses rpc_get_income_receipt.
+ * - Active products come from the role-aware rpc_list_products (admin response with purchase
+ *   prices, all keyset pages or nothing) via useIncomeCatalog.
  * - Receipt creations strictly execute transactional PostgreSQL RPC rpc_create_income_receipt.
  * - Accessible by administrators to record and monitor incoming stock shipments.
  */
 export const IncomePage = () => {
   const { user, profile, isAdmin } = useAuth();
   const userId = user?.id ?? null;
+  // Receipts are admin-only data (rpc_list_income_receipts): loaded only for an active admin
+  const canLoadReceipts = Boolean(userId) && isAdmin;
+  const accessKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+  const accessKeyRef = useRef(accessKey);
+  useEffect(() => {
+    accessKeyRef.current = accessKey;
+  }, [accessKey]);
 
   // Server data states
   const [serverReceipts, setServerReceipts] = useState<IncomeReceipt[]>([]);
-  const [isLoadingReceipts, setIsLoadingReceipts] = useState<boolean>(true);
+  const [isLoadingReceipts, setIsLoadingReceipts] = useState<boolean>(canLoadReceipts);
   const [receiptsLoadError, setReceiptsLoadError] = useState<string | null>(null);
   const [isReceiptsTruncated, setIsReceiptsTruncated] = useState<boolean>(false);
 
-  const [serverProducts, setServerProducts] = useState<Product[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
-  const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
+  const {
+    products: serverProducts,
+    isLoadingProducts,
+    productsLoadError,
+    loadProducts,
+  } = useIncomeCatalog({ userId, isAdmin });
 
   // Active query cancellation references
   const receiptsAbortControllerRef = useRef<AbortController | null>(null);
-  const productsAbortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef<boolean>(true);
 
   // Filters state
@@ -97,12 +107,9 @@ export const IncomePage = () => {
   if (prevUserId !== userId) {
     setPrevUserId(userId);
     setServerReceipts([]);
-    setIsLoadingReceipts(Boolean(userId));
+    setIsLoadingReceipts(canLoadReceipts);
     setReceiptsLoadError(null);
     setIsReceiptsTruncated(false);
-    setServerProducts([]);
-    setIsLoadingProducts(Boolean(userId));
-    setProductsLoadError(null);
     setIsCreateModalOpen(false);
     setReceiptToView(null);
     setNotification(null);
@@ -110,13 +117,19 @@ export const IncomePage = () => {
     setIsResolvingPending(false);
   }
 
-  // Close create modal immediately if admin privileges are lost
+  // Role change of the same user: close the create modal and never keep receipts loaded under
+  // the previous role (the load effect aborts the in-flight request and reloads for an admin)
   const [prevIsAdmin, setPrevIsAdmin] = useState<boolean>(isAdmin);
   if (prevIsAdmin !== isAdmin) {
     setPrevIsAdmin(isAdmin);
     if (!isAdmin && isCreateModalOpen) {
       setIsCreateModalOpen(false);
     }
+    setServerReceipts([]);
+    setIsLoadingReceipts(canLoadReceipts);
+    setReceiptsLoadError(null);
+    setIsReceiptsTruncated(false);
+    setReceiptToView(null);
   }
 
   // Keep track of current calendar date (YYYY-MM-DD) to refresh date-dependent calculations across midnight/tab focus
@@ -175,7 +188,8 @@ export const IncomePage = () => {
 
   // Load income receipts from Supabase
   const loadReceipts = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || !canLoadReceipts) return;
+    const requestAccessKey = `${userId}|admin`;
 
     if (receiptsAbortControllerRef.current) {
       receiptsAbortControllerRef.current.abort();
@@ -191,7 +205,8 @@ export const IncomePage = () => {
       if (
         !isMountedRef.current ||
         controller.signal.aborted ||
-        receiptsAbortControllerRef.current !== controller
+        receiptsAbortControllerRef.current !== controller ||
+        accessKeyRef.current !== requestAccessKey
       ) {
         return;
       }
@@ -240,67 +255,16 @@ export const IncomePage = () => {
         setIsLoadingReceipts(false);
       }
     }
-  }, [userId]);
+  }, [userId, canLoadReceipts]);
 
-  // Load active catalog products from Supabase
-  const loadProducts = useCallback(async () => {
-    if (!userId) return;
-
-    if (productsAbortControllerRef.current) {
-      productsAbortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    productsAbortControllerRef.current = controller;
-
-    setIsLoadingProducts(true);
-    setProductsLoadError(null);
-
-    try {
-      const res = await warehouseApi.fetchProducts(controller.signal);
-      if (
-        !isMountedRef.current ||
-        controller.signal.aborted ||
-        productsAbortControllerRef.current !== controller
-      ) {
-        return;
-      }
-
-      if (res.success) {
-        setServerProducts(res.data);
-      } else {
-        setProductsLoadError(res.error.message);
-      }
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        return;
-      }
-      if (
-        !isMountedRef.current ||
-        controller.signal.aborted ||
-        productsAbortControllerRef.current !== controller
-      ) {
-        return;
-      }
-      setProductsLoadError('Не удалось загрузить каталог товаров.');
-    } finally {
-      if (
-        isMountedRef.current &&
-        productsAbortControllerRef.current === controller
-      ) {
-        setIsLoadingProducts(false);
-      }
-    }
-  }, [userId]);
-
-  // Lifecycle & data loading
+  // Lifecycle & data loading; a user OR role change aborts the request and reloads
   useEffect(() => {
     isMountedRef.current = true;
-    if (!userId) return;
+    if (!canLoadReceipts) return;
 
     void Promise.resolve().then(() => {
       if (isMountedRef.current) {
         loadReceipts();
-        loadProducts();
       }
     });
 
@@ -309,11 +273,8 @@ export const IncomePage = () => {
       if (receiptsAbortControllerRef.current) {
         receiptsAbortControllerRef.current.abort();
       }
-      if (productsAbortControllerRef.current) {
-        productsAbortControllerRef.current.abort();
-      }
     };
-  }, [userId, loadReceipts, loadProducts]);
+  }, [userId, canLoadReceipts, loadReceipts]);
 
   // Dynamic statistics calculated across all server income receipts
   const stats: IncomeSummary = useMemo(() => {

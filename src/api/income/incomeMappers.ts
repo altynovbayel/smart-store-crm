@@ -1,71 +1,10 @@
-import type { Database } from '../../types/database.types';
 import type {
-  IncomeReceipt,
-  IncomeReceiptItem,
+  IncomeCatalogProduct,
+  WarehouseCatalog,
   CreateIncomeReceiptInput,
   CreateIncomeReceiptRpcParams,
 } from '../../types';
-import { minorToSom, somToMinor } from '../../utils/moneyUtils';
-
-export type IncomeReceiptRow = Database['public']['Tables']['income_receipts']['Row'];
-export type IncomeItemRow = Database['public']['Tables']['income_items']['Row'];
-
-export type IncomeReceiptWithItemsRow = IncomeReceiptRow & {
-  items?: IncomeItemRow[] | null;
-};
-
-/**
- * Maps a Supabase income_items row to frontend IncomeReceiptItem type.
- */
-export const mapIncomeItemRowToItem = (row: IncomeItemRow): IncomeReceiptItem => {
-  const purchasePrice = minorToSom(row.purchase_price_minor);
-  const totalAmount = minorToSom(row.subtotal_minor);
-  const quantity = Number.isSafeInteger(row.quantity) && row.quantity > 0 ? row.quantity : 0;
-
-  return {
-    id: row.id,
-    productId: row.product_id,
-    productName: row.product_name_snapshot,
-    sku: row.sku_snapshot,
-    quantity,
-    purchasePrice,
-    totalAmount,
-  };
-};
-
-/**
- * Maps a Supabase income_receipts row (with joined items) to frontend IncomeReceipt type.
- */
-export const mapIncomeReceiptRowToReceipt = (row: IncomeReceiptWithItemsRow): IncomeReceipt => {
-  const rawItems = Array.isArray(row.items) ? row.items : [];
-
-  // Sort items deterministically by created_at ASC, id ASC
-  const sortedItems = [...rawItems].sort((a, b) => {
-    const timeA = new Date(a.created_at).getTime();
-    const timeB = new Date(b.created_at).getTime();
-    if (timeA !== timeB) return timeA - timeB;
-    return a.id.localeCompare(b.id);
-  });
-
-  const items = sortedItems.map(mapIncomeItemRowToItem);
-  const totalQuantity = items.reduce((sum, it) => sum + it.quantity, 0);
-  const totalAmount = minorToSom(row.total_minor);
-
-  return {
-    id: row.id,
-    receiptNumber: row.receipt_number,
-    supplier: row.supplier,
-    documentNumber: row.supplier_document_number ?? '',
-    receivedAt: row.received_at,
-    createdAt: row.created_at,
-    responsiblePerson: row.created_by_name || 'Администратор',
-    comment: row.comment ?? undefined,
-    items,
-    totalQuantity,
-    totalAmount,
-    status: 'completed',
-  };
-};
+import { somToMinor } from '../../utils/moneyUtils';
 
 /**
  * Transforms create income receipt form input into rpc_create_income_receipt arguments.
@@ -149,4 +88,29 @@ export const mapIncomeReceiptFormToRpcArgs = (
     p_comment: form.comment?.trim() || undefined,
     p_items: rpcItems,
   };
+};
+
+/**
+ * Maps a complete rpc_list_products catalog to the Income form products.
+ * Income is admin-only: a cashier response or an admin row without a purchase price yields
+ * null (the whole catalog is rejected; a missing price is never replaced with 0).
+ */
+export const mapCatalogToIncomeProducts = (
+  catalog: WarehouseCatalog
+): IncomeCatalogProduct[] | null => {
+  if (catalog.role !== 'admin') return null;
+  const products: IncomeCatalogProduct[] = [];
+  for (const item of catalog.products) {
+    if (item.purchasePrice === null) return null;
+    products.push({
+      id: item.id,
+      sku: item.sku,
+      name: item.name,
+      sellingPrice: item.sellingPrice,
+      stock: item.stock,
+      unit: item.unit,
+      purchasePrice: item.purchasePrice,
+    });
+  }
+  return products;
 };

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { X, Plus, AlertCircle, ShoppingCart } from 'lucide-react';
 import type {
-  Product,
+  SaleCatalogProduct,
   SaleFormItemState,
   PaymentMethod,
   DiscountType,
@@ -19,14 +19,14 @@ import { SalePaymentSection } from './SalePaymentSection';
 import { SaleReceiptDiscountSection } from './SaleReceiptDiscountSection';
 import { SaleSummary } from './SaleSummary';
 import { useSaleModalA11y } from './useSaleModalA11y';
-import { useSaleHistoricalPrices } from './useSaleHistoricalPrices';
 import { useSaleBarcodeScanner } from './useSaleBarcodeScanner';
 import { useSaleIdempotency } from './useSaleIdempotency';
 import styles from './SaleFormModal.module.scss';
 
 export interface SaleFormModalProps {
   isOpen: boolean;
-  activeProducts: Product[];
+  /** Role-aware catalog without purchase prices (cost / profit are determined by the server). */
+  activeProducts: SaleCatalogProduct[];
   initialResponsiblePerson?: string;
   pendingOperation?: PendingSaleOperation | null;
   onClose: () => void;
@@ -134,13 +134,6 @@ export const SaleFormModal = ({
     [items, activeProducts, isIndeterminate]
   );
 
-  const { historicalPrices } = useSaleHistoricalPrices({
-    isOpen,
-    soldAt,
-    items: effectiveItems,
-    activeProducts,
-  });
-
   const runValidation = (itemsToValidate: SaleFormItemState[], isRetrySubmission: boolean) =>
     validateSaleForm(
       soldAt,
@@ -152,7 +145,6 @@ export const SaleFormModal = ({
       rawReceiptDiscountValue,
       itemsToValidate,
       activeProducts,
-      historicalPrices,
       isRetrySubmission
     );
 
@@ -185,13 +177,10 @@ export const SaleFormModal = ({
   // Computed live totals (preview; the server recalculates every amount)
   const liveTotals = calculateSaleTotals(
     effectiveItems,
-    activeProducts,
     receiptDiscountType,
     rawReceiptDiscountValue,
     paymentMethod,
-    rawReceivedAmount,
-    soldAt,
-    historicalPrices
+    rawReceivedAmount
   );
 
   const handleAddItem = () => {
@@ -410,7 +399,6 @@ export const SaleFormModal = ({
                     errors={errors}
                     isOnlyRow={items.length === 1}
                     disabled={isSubmitting}
-                    historicalPrice={item.productId ? historicalPrices[item.productId] : undefined}
                     onProductChange={handleItemProductChange}
                     onQuantityChange={handleItemQuantityChange}
                     onDiscountTypeChange={handleItemDiscountTypeChange}

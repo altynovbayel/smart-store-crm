@@ -1,5 +1,5 @@
 import { Trash2 } from 'lucide-react';
-import type { Product, FormItemState } from '../../../types';
+import type { IncomeCatalogProduct, FormItemState } from '../../../types';
 import { calculateItemSubtotal } from '../../../utils/incomeCalculations';
 import { formatCurrency } from '../../../utils/formatUtils';
 import styles from './IncomeFormModal.module.scss';
@@ -7,8 +7,8 @@ import styles from './IncomeFormModal.module.scss';
 export interface IncomeFormItemRowProps {
   index: number;
   item: FormItemState;
-  activeProducts: Product[];
-  selectedProduct?: Product;
+  activeProducts: IncomeCatalogProduct[];
+  selectedProduct?: IncomeCatalogProduct;
   allItems: FormItemState[];
   errors: Record<string, string>;
   isOnlyRow: boolean;

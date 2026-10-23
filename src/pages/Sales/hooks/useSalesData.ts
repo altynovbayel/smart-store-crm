@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Product, Sale } from '../../../types';
-import { salesApi } from '../../../api/sales';
+import type { SaleCatalogProduct, Sale } from '../../../types';
+import { salesApi, mapCatalogItemToSaleProduct } from '../../../api/sales';
 import { warehouseApi } from '../../../api/warehouse';
 import { restoreFocusWithFallback } from '../../../utils/focusUtils';
 
 interface UseSalesDataOptions {
   userId: string | null;
+  /** Client role; a role change (like a user switch) aborts and clears the loaded catalog. */
+  isAdmin: boolean;
   isAnyModalOpen: () => boolean;
   /**
    * Called with freshly loaded receipts.
@@ -15,7 +17,10 @@ interface UseSalesDataOptions {
 }
 
 /**
- * Loads receipts (sales + sale_items) and active catalog products from Supabase.
+ * Loads receipts (sales + sale_items) and the active catalog from Supabase.
+ * The catalog comes from the role-aware rpc_list_products (all keyset pages, all-or-nothing):
+ * a cashier receives no purchase prices, and Sales keeps none for any role (cost / profit are
+ * determined by rpc_create_sale on the server).
  * Supabase is the only data source of the Sales page (InventoryContext is not used or updated).
  * - Each loader cancels its previous in-flight request (AbortController) and ignores stale responses.
  * - State is reset when the authenticated user changes.
@@ -24,6 +29,7 @@ interface UseSalesDataOptions {
  */
 export const useSalesData = ({
   userId,
+  isAdmin,
   isAnyModalOpen,
   onSalesLoaded,
 }: UseSalesDataOptions) => {
@@ -32,7 +38,7 @@ export const useSalesData = ({
   const [salesLoadError, setSalesLoadError] = useState<string | null>(null);
   const [isSalesTruncated, setIsSalesTruncated] = useState<boolean>(false);
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<SaleCatalogProduct[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
   const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
 
@@ -50,6 +56,19 @@ export const useSalesData = ({
   const [prevUserId, setPrevUserId] = useState<string | null>(userId);
   if (prevUserId !== userId) {
     setPrevUserId(userId);
+    setSales([]);
+    setIsLoadingSales(Boolean(userId));
+    setSalesLoadError(null);
+    setIsSalesTruncated(false);
+    setProducts([]);
+    setIsLoadingProducts(Boolean(userId));
+    setProductsLoadError(null);
+  }
+
+  // Role change of the same user: never keep receipts / catalog loaded under the previous role
+  const [prevIsAdmin, setPrevIsAdmin] = useState<boolean>(isAdmin);
+  if (prevIsAdmin !== isAdmin) {
+    setPrevIsAdmin(isAdmin);
     setSales([]);
     setIsLoadingSales(Boolean(userId));
     setSalesLoadError(null);
@@ -139,7 +158,7 @@ export const useSalesData = ({
     }
   }, [userId, isAnyModalOpen]);
 
-  const loadProducts = useCallback(async (isRetry = false): Promise<Product[] | null> => {
+  const loadProducts = useCallback(async (isRetry = false): Promise<SaleCatalogProduct[] | null> => {
     if (!userId) return null;
 
     if (productsAbortControllerRef.current) {
@@ -153,10 +172,11 @@ export const useSalesData = ({
       setProductsLoadError(null);
     }
     let resSuccess = false;
-    let freshProducts: Product[] | null = null;
+    let freshProducts: SaleCatalogProduct[] | null = null;
 
     try {
-      const res = await warehouseApi.fetchProducts(controller.signal);
+      // All pages or nothing: a failed / inconsistent page never yields a partial catalog
+      const res = await warehouseApi.listCatalog(controller.signal);
       if (
         !isMountedRef.current ||
         controller.signal.aborted ||
@@ -167,9 +187,9 @@ export const useSalesData = ({
 
       if (res.success) {
         resSuccess = true;
-        freshProducts = res.data;
+        freshProducts = res.data.products.map(mapCatalogItemToSaleProduct);
         setProductsLoadError(null);
-        setProducts(res.data);
+        setProducts(freshProducts);
       } else {
         setProductsLoadError(res.error.message);
       }
@@ -217,7 +237,7 @@ export const useSalesData = ({
     await Promise.all([loadSales(), loadProducts()]);
   }, [loadSales, loadProducts]);
 
-  // Lifecycle & data loading
+  // Lifecycle & data loading; a user OR role change aborts everything and reloads
   useEffect(() => {
     isMountedRef.current = true;
     if (!userId) return;
@@ -238,7 +258,7 @@ export const useSalesData = ({
         productsAbortControllerRef.current.abort();
       }
     };
-  }, [userId, loadSales, loadProducts]);
+  }, [userId, isAdmin, loadSales, loadProducts]);
 
   return {
     sales,

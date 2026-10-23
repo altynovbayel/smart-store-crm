@@ -1,3 +1,15 @@
+import type { WarehouseCatalogProduct } from './warehouse';
+
+/**
+ * Catalog item of the Income form: an admin row of rpc_list_products. The purchase price is
+ * required (form default for a new line and the receipt price); a row without it is never
+ * accepted with a substituted 0.
+ */
+export interface IncomeCatalogProduct
+  extends Pick<WarehouseCatalogProduct, 'id' | 'sku' | 'name' | 'sellingPrice' | 'stock' | 'unit'> {
+  purchasePrice: number;
+}
+
 export interface IncomeReceiptItem {
   id: string;
   productId: string;

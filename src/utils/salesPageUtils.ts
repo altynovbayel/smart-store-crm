@@ -4,20 +4,31 @@ import { toCents, fromCents } from './incomeCalculations';
 
 /**
  * "Today" statistics of the sales page computed in integer cents.
+ * Profit is computed only when `includeProfit` (admin) and every receipt of today has server cost data;
+ * otherwise it is null (never 0 or a partial sum).
  */
 export const calculateSalesSummaryStats = (
   sales: readonly Sale[],
-  currentDateKey: string
+  currentDateKey: string,
+  includeProfit: boolean
 ): SaleSummary => {
   let todayRevenueCents = 0;
   let todaySalesCount = 0;
   let todayProfitCents = 0;
+  // Profit is shown only if EVERY receipt of today carries server cost data (never a partial sum)
+  let isProfitComplete = includeProfit;
 
   for (const s of sales) {
     if (isToday(s.soldAt, currentDateKey)) {
       todayRevenueCents += toCents(s.totalAmount);
       todaySalesCount += 1;
-      todayProfitCents += toCents(s.profitAmount);
+      if (isProfitComplete) {
+        if (s.profitAmount === null) {
+          isProfitComplete = false;
+        } else {
+          todayProfitCents += toCents(s.profitAmount);
+        }
+      }
     }
   }
 
@@ -28,7 +39,7 @@ export const calculateSalesSummaryStats = (
     todayRevenue: fromCents(todayRevenueCents),
     todaySalesCount,
     todayAverageCheck,
-    todayProfit: fromCents(todayProfitCents),
+    todayProfit: isProfitComplete ? fromCents(todayProfitCents) : null,
   };
 };
 

@@ -28,12 +28,12 @@ const DEFAULT_FILTERS: SaleFilters = {
 const PAGE_SIZE = 8;
 
 /**
- * SalesPage works directly with Supabase (sales, sale_items, products) — InventoryContext is not used.
+ * SalesPage works directly with Supabase (sales, sale_items; catalog via rpc_list_products) — InventoryContext is not used.
  * - Sales are conducted only through the transactional RPC rpc_create_sale (idempotent by UUID).
  * - Available to active admins and cashiers (route guard + server get_active_profile(false)).
  */
 export const SalesPage = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const userId = user?.id ?? null;
 
   // Filters & pagination state
@@ -58,10 +58,11 @@ export const SalesPage = () => {
     []
   );
 
-  // Close modals on user switch or logout
-  const [prevUserId, setPrevUserId] = useState<string | null>(userId);
-  if (prevUserId !== userId) {
-    setPrevUserId(userId);
+  // Close modals on user switch, logout or role change (no receipt of the previous role stays open)
+  const accessKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+  const [prevAccessKey, setPrevAccessKey] = useState<string>(accessKey);
+  if (prevAccessKey !== accessKey) {
+    setPrevAccessKey(accessKey);
     setIsCreateModalOpen(false);
     setSaleToView(null);
   }
@@ -103,7 +104,12 @@ export const SalesPage = () => {
     loadSales,
     loadProducts,
     reloadAll,
-  } = useSalesData({ userId, isAnyModalOpen, onSalesLoaded: handleSalesLoaded });
+  } = useSalesData({
+    userId,
+    isAdmin,
+    isAnyModalOpen,
+    onSalesLoaded: handleSalesLoaded,
+  });
 
   const { isResolvingPending, handleResolvePending, handleCreateSale } = useSaleSubmission({
     userId,
@@ -121,8 +127,8 @@ export const SalesPage = () => {
 
   // Dynamic statistics calculated across all loaded receipts
   const stats: SaleSummary = useMemo(
-    () => calculateSalesSummaryStats(sales, currentDateKey),
-    [sales, currentDateKey]
+    () => calculateSalesSummaryStats(sales, currentDateKey, isAdmin),
+    [sales, currentDateKey, isAdmin]
   );
 
   // Filter receipts by search query, payment method, and period
@@ -372,6 +378,7 @@ export const SalesPage = () => {
         isOpen={Boolean(saleToView)}
         sale={saleToView}
         onClose={handleCloseViewModal}
+        showCostDetails={isAdmin}
       />
     </div>
   );

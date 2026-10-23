@@ -1,25 +1,41 @@
 import type { Database } from '../../types/database.types';
 import type {
   CreateSaleInput,
-  Sale,
+  SaleCatalogProduct,
   SaleItem,
   ServerDiscountType,
+  WarehouseCatalogProduct,
 } from '../../types';
 import { PAYMENT_METHODS } from '../../types';
 import { isValidUuid } from '../../utils/uuidUtils';
 import {
   amountToMinor,
   calculateSaleMinorTotals,
-  fromServerDiscount,
-  signedMinorToAmount,
   toServerDiscount,
   type SaleMinorIssue,
 } from '../../utils/saleMinorCalculations';
 import { SaleValidationError } from './salesValidationError';
 
-export type SaleRow = Database['public']['Tables']['sales']['Row'];
-export type SaleItemRow = Database['public']['Tables']['sale_items']['Row'];
-export type SaleWithItemsRow = SaleRow & { items: SaleItemRow[] };
+/**
+ * Narrows a role-aware catalog item (rpc_list_products) to the sale-form product. Fields are
+ * copied explicitly, so an admin purchase price / description never enters the Sales state either.
+ */
+export const mapCatalogItemToSaleProduct = (item: WarehouseCatalogProduct): SaleCatalogProduct => ({
+  id: item.id,
+  sku: item.sku,
+  barcode: item.barcode,
+  name: item.name,
+  category: item.category,
+  categoryLabel: item.categoryLabel,
+  sellingPrice: item.sellingPrice,
+  stock: item.stock,
+  minStockThreshold: item.minStockThreshold,
+  status: item.status,
+  isArchived: item.isArchived,
+  unit: item.unit,
+  iconType: item.iconType,
+});
+
 export type CreateSaleRpcArgs = Database['public']['Functions']['rpc_create_sale']['Args'];
 
 /** One element of `p_items` exactly as read by rpc_create_sale (type alias keeps it assignable to Json). */
@@ -31,57 +47,12 @@ export type SaleRpcItem = {
   discount_value: number;
 };
 
-/** Safe integer tyiyns → som; corrupted values never crash rendering. Supports negative profit. */
-const toAmount = (minor: number): number =>
-  Number.isSafeInteger(minor) ? signedMinorToAmount(minor) : 0;
-
-/**
- * Deterministic line order: sale_items has no line number and all lines of a receipt share
- * created_at (transaction start), so the order is created_at ASC, then id ASC.
- * It is stable across reloads but does not reproduce the order in which lines were entered.
- */
-const compareSaleItemRows = (a: SaleItemRow, b: SaleItemRow): number => {
-  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
-  if (a.id === b.id) return 0;
-  return a.id < b.id ? -1 : 1;
-};
-
-/**
- * Maps a sale_items row strictly from its snapshot fields (never from the current product card).
- * finalAmount keeps the legacy meaning: gross − item discount, before the receipt discount.
- */
-export const mapSaleItemRowToSaleItem = (row: SaleItemRow): SaleItem => {
-  const discount = fromServerDiscount(row.discount_type, row.discount_value);
-  const finalBeforeReceiptMinor = row.gross_minor - row.item_discount_minor;
-
-  return {
-    id: row.id,
-    productId: row.product_id,
-    productName: row.product_name_snapshot,
-    sku: row.sku_snapshot,
-    barcode: row.barcode_snapshot ?? undefined,
-    quantity: row.quantity,
-    unitPrice: toAmount(row.selling_price_snapshot_minor),
-    purchasePriceSnapshot: toAmount(row.purchase_price_snapshot_minor),
-    grossAmount: toAmount(row.gross_minor),
-    discountType: discount.discountType,
-    discountValue: discount.discountValue,
-    discountAmount: toAmount(row.item_discount_minor),
-    finalAmount: toAmount(finalBeforeReceiptMinor),
-    costAmount: toAmount(row.cost_total_minor),
-    // Server line profit is computed after the receipt discount allocation
-    profitAmount: toAmount(row.profit_minor),
-    receiptDiscountAllocated: toAmount(row.receipt_discount_allocated_minor),
-    netAmount: toAmount(row.net_total_minor),
-  };
-};
-
 /**
  * Total sold units of a receipt (Σ quantity). `Sale.itemsCount` means UNITS across the app
  * (InventoryProvider, mock sales, sales tables, history statistics) — not the number of lines.
  * Non-safe-integer quantities are ignored so the sum can never become NaN or unsafe.
  */
-export const sumSaleItemUnits = (items: readonly Pick<SaleItemRow, 'quantity'>[]): number => {
+export const sumSaleItemUnits = (items: readonly { quantity: number }[]): number => {
   let units = 0;
   for (const item of items) {
     if (Number.isSafeInteger(item.quantity) && item.quantity > 0) {
@@ -98,40 +69,6 @@ export const buildPrimaryProductName = (items: readonly Pick<SaleItem, 'productN
   const first = items[0]?.productName;
   if (!first) return undefined;
   return items.length > 1 ? `${first} +${items.length - 1}` : first;
-};
-
-/** Maps a sales row with embedded sale_items into the application Sale (totals come from the header). */
-export const mapSaleRowToSale = (row: SaleWithItemsRow): Sale => {
-  const items = [...row.items].sort(compareSaleItemRows).map(mapSaleItemRowToSaleItem);
-  const receiptDiscount = fromServerDiscount(row.receipt_discount_type, row.receipt_discount_value);
-
-  return {
-    id: row.id,
-    receiptNumber: row.receipt_number,
-    soldAt: row.sold_at,
-    createdAt: row.created_at,
-    paymentMethod: row.payment_method,
-    paymentMethodLabel: PAYMENT_METHODS[row.payment_method],
-    items,
-    subtotal: toAmount(row.subtotal_minor),
-    itemDiscountTotal: toAmount(row.item_discount_total_minor),
-    receiptDiscountType: receiptDiscount.discountType,
-    receiptDiscountValue: receiptDiscount.discountValue,
-    receiptDiscountAmount: toAmount(row.receipt_discount_minor),
-    totalAmount: toAmount(row.total_minor),
-    // sales has no cost column: cost = total − profit (equals Σ sale_items.cost_total_minor)
-    costAmount: toAmount(row.total_minor - row.profit_minor),
-    profitAmount: toAmount(row.profit_minor),
-    receivedAmount: row.received_minor === null ? undefined : toAmount(row.received_minor),
-    changeAmount: row.change_minor === null ? undefined : toAmount(row.change_minor),
-    responsiblePerson: row.created_by_name,
-    comment: row.comment ?? undefined,
-    status: 'completed',
-    statusLabel: 'Завершено',
-    // Same convention as the local store and the tables' fallback: "first line +N other lines"
-    primaryProductName: buildPrimaryProductName(items),
-    itemsCount: sumSaleItemUnits(row.items),
-  };
 };
 
 const ISSUE_MESSAGES: Record<SaleMinorIssue, { message: string; field: string }> = {

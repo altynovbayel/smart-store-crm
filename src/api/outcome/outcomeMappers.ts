@@ -1,78 +1,12 @@
-import type { Database } from '../../types/database.types';
 import type {
-  OutcomeDocument,
-  OutcomeItem,
-  OutcomeReason,
   CreateOutcomeDocumentInput,
   CreateOutcomeDocumentRpcParams,
   CreateOutcomeDocumentRpcItem,
+  Product,
+  WarehouseCatalog,
 } from '../../types';
-import { minorToSom } from '../../utils/moneyUtils';
 import { isValidUuid } from '../../utils/uuidUtils';
 import { OutcomeValidationError } from './outcomeValidationError';
-
-export type OutcomeDocumentRow = Database['public']['Tables']['outcome_documents']['Row'];
-export type OutcomeItemRow = Database['public']['Tables']['outcome_items']['Row'];
-
-export interface OutcomeDocumentWithItemsRow extends OutcomeDocumentRow {
-  items?: OutcomeItemRow[] | null;
-}
-
-/**
- * Maps a single Supabase outcome_items row into an application OutcomeItem,
- * preserving exact historical snapshots and converting minor units to som numbers.
- */
-export const mapOutcomeItemRowToItem = (row: OutcomeItemRow): OutcomeItem => {
-  const purchasePriceMinor = Number.isSafeInteger(row.purchase_price_snapshot_minor)
-    ? row.purchase_price_snapshot_minor
-    : 0;
-
-  const subtotalMinor = Number.isSafeInteger(row.subtotal_minor)
-    ? row.subtotal_minor
-    : purchasePriceMinor * row.quantity;
-
-  return {
-    id: row.id,
-    productId: row.product_id,
-    productName: row.product_name_snapshot,
-    sku: row.sku_snapshot,
-    quantity: row.quantity,
-    purchasePrice: minorToSom(purchasePriceMinor),
-    totalCost: minorToSom(subtotalMinor),
-  };
-};
-
-/**
- * Maps a Supabase outcome_documents row (with embedded items) into an application OutcomeDocument.
- */
-export const mapOutcomeDocumentRowToDocument = (
-  row: OutcomeDocumentWithItemsRow
-): OutcomeDocument => {
-  const rawItems = Array.isArray(row.items) ? row.items : [];
-  const items = rawItems
-    .map(mapOutcomeItemRowToItem)
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  const totalCostMinor = Number.isSafeInteger(row.total_cost_minor)
-    ? row.total_cost_minor
-    : 0;
-
-  const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-
-  return {
-    id: row.id,
-    outcomeNumber: row.document_number,
-    reason: row.reason as OutcomeReason,
-    documentDate: row.occurred_at,
-    createdAt: row.created_at,
-    responsiblePerson: row.created_by_name,
-    comment: row.reason_comment || undefined,
-    items,
-    totalQuantity,
-    totalCost: minorToSom(totalCostMinor),
-    status: 'completed',
-  };
-};
 
 /**
  * Maps form creation input into strict typed arguments for `rpc_create_outcome_document`.
@@ -163,4 +97,39 @@ export const mapOutcomeFormToRpcArgs = (
     p_items: rpcItems,
     p_id: input.id,
   };
+};
+
+/**
+ * Maps a complete rpc_list_products catalog to the Product shape used by the Outcome form,
+ * historical cost resolution and validation (same fields the former products SELECT produced).
+ * Outcome is admin-only: a cashier response, or an admin row without a purchase price or
+ * description, yields null (the whole catalog is rejected; a missing price is never 0).
+ */
+export const mapCatalogToOutcomeProducts = (catalog: WarehouseCatalog): Product[] | null => {
+  if (catalog.role !== 'admin') return null;
+  const products: Product[] = [];
+  for (const item of catalog.products) {
+    if (item.purchasePrice === null || item.description === null || item.priceUpdatedAt === undefined) {
+      return null;
+    }
+    products.push({
+      id: item.id,
+      sku: item.sku,
+      barcode: item.barcode,
+      name: item.name,
+      category: item.category,
+      categoryLabel: item.categoryLabel,
+      description: item.description,
+      purchasePrice: item.purchasePrice,
+      sellingPrice: item.sellingPrice,
+      stock: item.stock,
+      minStockThreshold: item.minStockThreshold,
+      status: item.status,
+      unit: item.unit,
+      iconType: item.iconType,
+      isArchived: item.isArchived,
+      priceUpdatedAt: item.priceUpdatedAt,
+    });
+  }
+  return products;
 };

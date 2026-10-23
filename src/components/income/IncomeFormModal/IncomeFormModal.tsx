@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { X, Plus, AlertCircle, ArrowDownToLine } from 'lucide-react';
-import type { Product, IncomeReceiptFormData, FormItemState } from '../../../types';
+import type { IncomeCatalogProduct, IncomeReceiptFormData, FormItemState } from '../../../types';
 import { getCurrentLocalDatetime } from '../../../utils/dateUtils';
 import { formatCurrency, formatNumber } from '../../../utils/formatUtils';
 import { restoreFocusWithFallback } from '../../../utils/focusUtils';
@@ -32,7 +32,7 @@ const generateUuid = (): string => {
 
 export interface IncomeFormModalProps {
   isOpen: boolean;
-  activeProducts: Product[];
+  activeProducts: IncomeCatalogProduct[];
   initialResponsiblePerson?: string;
   pendingOperation?: PendingIncomeOperation | null;
   onClose: () => void;

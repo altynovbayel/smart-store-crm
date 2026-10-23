@@ -10,3 +10,5 @@ export type * from './auth';
 export type * from './database.types';
 export type * from './apiError';
 export type * from './dashboard';
+export * from './salesRpc';
+export * from './priceHistoryRpc';
