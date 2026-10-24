@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
-import type { Sale } from '../../../types';
+import type { DashboardRecentSaleRow } from '../../../types';
 import { Badge } from '../../common/Badge/Badge';
 import styles from './RecentSales.module.scss';
 
 export interface RecentSalesProps {
-  sales: Sale[];
+  /** Safe server DTO rows (no cost / profit), already formatted for display. */
+  sales: DashboardRecentSaleRow[];
 }
 
 export const RecentSales = ({ sales }: RecentSalesProps) => {
@@ -12,7 +13,7 @@ export const RecentSales = ({ sales }: RecentSalesProps) => {
     <div className={styles.container}>
       <header className={styles.header}>
         <h2 className={styles.title}>Последние продажи</h2>
-        <Link to="/sales" className={styles.actionLink}>
+        <Link to="/sales" className={styles.actionLink} data-dashboard-recent-sales-link>
           Все продажи
         </Link>
       </header>
@@ -35,8 +36,8 @@ export const RecentSales = ({ sales }: RecentSalesProps) => {
               <tr key={sale.id}>
                 <td className={styles.receiptCell}>{sale.receiptNumber}</td>
                 <td className={styles.dateCell}>{sale.dateTimeFormatted}</td>
-                <td className={styles.productCell}>{sale.primaryProductName}</td>
-                <td className={styles.qtyCell}>{sale.itemsCount}</td>
+                <td className={styles.productCell}>{sale.productLabel}</td>
+                <td className={styles.qtyCell}>{sale.unitsCount}</td>
                 <td className={styles.amountCell}>
                   {sale.totalAmount.toLocaleString('ru-RU')} сом
                 </td>

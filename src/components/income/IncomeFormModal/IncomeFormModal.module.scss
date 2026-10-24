@@ -170,6 +170,18 @@
   &[aria-invalid="true"] {
     border-color: $color-danger;
   }
+
+  &:read-only {
+    background-color: #f1f5f9;
+    color: $color-text-secondary;
+    cursor: default;
+  }
+}
+
+.fieldHint {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  margin-top: 2px;
 }
 
 .textarea {

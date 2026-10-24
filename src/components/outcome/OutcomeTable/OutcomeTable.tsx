@@ -12,6 +12,9 @@ export interface OutcomeTableProps {
   onResetFilters: () => void;
   onOpenCreateModal: () => void;
   onViewDocument: (document: OutcomeDocument) => void;
+  canCreate?: boolean;
+  isCreateDisabled?: boolean;
+  createDisabledTooltip?: string;
 }
 
 const getReasonBadgeClass = (reason: OutcomeReason): string => {
@@ -37,6 +40,9 @@ export const OutcomeTable = ({
   onResetFilters,
   onOpenCreateModal,
   onViewDocument,
+  canCreate = true,
+  isCreateDisabled = false,
+  createDisabledTooltip,
 }: OutcomeTableProps) => {
   // Empty state: No outcome documents registered at all
   if (totalCount === 0) {
@@ -49,16 +55,21 @@ export const OutcomeTable = ({
         <p className={styles.emptySubtitle}>
           Оформите первое списание товаров со склада для учёта брака, повреждений или внутренних нужд магазина.
         </p>
-        <button
-          type="button"
-          className={styles.emptyActionBtn}
-          onClick={onOpenCreateModal}
-        >
-          Оформить первое списание
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            className={styles.emptyActionBtn}
+            onClick={onOpenCreateModal}
+            disabled={isCreateDisabled}
+            title={createDisabledTooltip ?? 'Оформить первое списание товаров'}
+          >
+            Оформить первое списание
+          </button>
+        )}
       </div>
     );
   }
+
 
   const handleEmptyReset = () => {
     onResetFilters();

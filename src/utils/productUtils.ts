@@ -1,4 +1,5 @@
 import type { ProductCategory, ProductIconType, StockStatus } from '../types';
+import { PRODUCT_CATEGORIES, FALLBACK_PRODUCT_CATEGORY } from '../types';
 
 /**
  * Calculates stock status based on current stock and threshold
@@ -30,26 +31,30 @@ export const getStockStatusLabel = (status: StockStatus): string => {
   }
 };
 
-export const getCategoryLabel = (category: ProductCategory): string => {
-  switch (category) {
-    case 'cases':
-      return 'Чехлы';
-    case 'cables':
-      return 'Кабели';
-    case 'glass':
-      return 'Защитные стёкла';
-    case 'powerbanks':
-      return 'Power Bank';
-    case 'headphones':
-      return 'Наушники';
-    case 'adapters':
-      return 'Адаптеры';
-    case 'memory':
-      return 'Карты памяти';
-    case 'holders':
-      return 'Автодержатели';
-  }
-};
+/** All category keys in display order, derived from PRODUCT_CATEGORIES. */
+export const PRODUCT_CATEGORY_KEYS: readonly ProductCategory[] = PRODUCT_CATEGORIES.map(
+  (c) => c.key
+);
+
+const CATEGORY_LABEL_BY_KEY: ReadonlyMap<string, string> = new Map(
+  PRODUCT_CATEGORIES.map((c) => [c.key, c.label])
+);
+
+/** Runtime type guard for values coming from the database or form controls. */
+export const isProductCategory = (value: string): value is ProductCategory =>
+  CATEGORY_LABEL_BY_KEY.has(value);
+
+/**
+ * Converts a raw stored category key into a known ProductCategory.
+ * Unknown or legacy keys are displayed as `other` (never silently as `cases`).
+ */
+export const parseProductCategory = (value: string): ProductCategory =>
+  isProductCategory(value) ? value : FALLBACK_PRODUCT_CATEGORY;
+
+export const getCategoryLabel = (category: ProductCategory): string =>
+  CATEGORY_LABEL_BY_KEY.get(category) ??
+  CATEGORY_LABEL_BY_KEY.get(FALLBACK_PRODUCT_CATEGORY) ??
+  'Другое';
 
 export const getIconTypeByCategory = (category: ProductCategory): ProductIconType => {
   switch (category) {
@@ -69,6 +74,28 @@ export const getIconTypeByCategory = (category: ProductCategory): ProductIconTyp
       return 'sdcard';
     case 'holders':
       return 'holder';
+    case 'keyboards':
+      return 'keyboard';
+    case 'speakers':
+      return 'speaker';
+    case 'grooming':
+      return 'grooming';
+    case 'tripods':
+      return 'tripod';
+    case 'cameras':
+      return 'camera';
+    case 'fmtransmitters':
+      return 'fmtransmitter';
+    case 'converters':
+      return 'converter';
+    case 'other':
+      return 'package';
+    default: {
+      // Compile-time exhaustiveness: adding a category without an icon fails the build
+      const unhandled: never = category;
+      void unhandled;
+      return 'package';
+    }
   }
 };
 

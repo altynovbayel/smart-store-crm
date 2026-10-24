@@ -1,4 +1,5 @@
-import type { Product } from './product';
+import type { WarehouseCatalogProduct } from './warehouse';
+import type { MappedApiError } from './apiError';
 
 export type PaymentMethod = 'cash' | 'card' | 'transfer';
 export type PaymentMethodLabel = 'Наличные' | 'Карта' | 'Перевод';
@@ -26,14 +27,27 @@ export interface SaleItem {
   sku: string;
   quantity: number;
   unitPrice: number;
-  purchasePriceSnapshot: number;
+  /** Admin only: null when the server did not return cost data (cashier). Never 0 as a substitute. */
+  purchasePriceSnapshot: number | null;
   grossAmount: number;
   discountType: DiscountType;
   discountValue: number;
   discountAmount: number;
   finalAmount: number;
-  costAmount: number;
-  profitAmount: number;
+  /** Admin only (null for a cashier). */
+  costAmount: number | null;
+  /** Admin only (null for a cashier). */
+  profitAmount: number | null;
+  /** Barcode snapshot at the moment of sale (server receipts only). */
+  barcode?: string;
+  /**
+   * Server receipts only: share of the receipt-level discount allocated to this line.
+   * `finalAmount` keeps its meaning (after the item discount, BEFORE the receipt discount),
+   * so consumers that allocate the receipt discount themselves never subtract it twice.
+   */
+  receiptDiscountAllocated?: number;
+  /** Server receipts only: amount actually paid for the line (finalAmount − receiptDiscountAllocated). */
+  netAmount?: number;
 }
 
 export interface Sale {
@@ -50,8 +64,10 @@ export interface Sale {
   receiptDiscountValue: number;
   receiptDiscountAmount: number;
   totalAmount: number;
-  costAmount: number;
-  profitAmount: number;
+  /** Admin only (null for a cashier). */
+  costAmount: number | null;
+  /** Admin only (null for a cashier). */
+  profitAmount: number | null;
   receivedAmount?: number;
   changeAmount?: number;
   responsiblePerson: string;
@@ -104,24 +120,45 @@ export interface SaleSummary {
   todayRevenue: number;
   todaySalesCount: number;
   todayAverageCheck: number;
-  todayProfit: number;
+  /** Admin only; null → profit is not shown (cashier). Never replaced by 0. */
+  todayProfit: number | null;
 }
 
+/**
+ * Catalog product as used by the sale form (search, scanning, stock checks, selling price).
+ * Deliberately has NO purchase price: cost and profit of a sale are determined by the server
+ * (rpc_create_sale), never by the browser — a cashier's catalog does not contain them at all.
+ */
+export type SaleCatalogProduct = Pick<
+  WarehouseCatalogProduct,
+  | 'id'
+  | 'sku'
+  | 'barcode'
+  | 'name'
+  | 'category'
+  | 'categoryLabel'
+  | 'sellingPrice'
+  | 'stock'
+  | 'minStockThreshold'
+  | 'status'
+  | 'isArchived'
+  | 'unit'
+  | 'iconType'
+>;
+
+/** Line preview of the sale form (selling side only; cost / profit are server-side). */
 export interface SaleItemCalculations {
   quantity: number;
   unitPrice: number;
   grossAmount: number;
   discountAmount: number;
   finalAmount: number;
-  costAmount: number;
-  profitAmount: number;
   grossCents: number;
   discountCents: number;
   finalCents: number;
-  costCents: number;
-  profitCents: number;
 }
 
+/** Receipt preview of the sale form (selling side only; cost / profit are server-side). */
 export interface SaleTotals {
   totalUnits: number;
   subtotal: number;
@@ -129,8 +166,6 @@ export interface SaleTotals {
   itemsFinal: number;
   receiptDiscountAmount: number;
   totalAmount: number;
-  costAmount: number;
-  profitAmount: number;
   changeAmount: number;
   isOverflow: boolean;
 }
@@ -143,8 +178,75 @@ export interface SaleValidationResult {
 
 export interface BarcodeScanResult {
   success: boolean;
-  product?: Product;
+  product?: SaleCatalogProduct;
   updatedItems?: SaleFormItemState[];
   message?: string;
   error?: string;
+}
+
+/** Discount type as stored by PostgreSQL (`public.discount_type`); the form never uses 'none'. */
+export type ServerDiscountType = 'none' | 'fixed' | 'percent';
+
+export type MappedSaleError = MappedApiError;
+
+export type SaleApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: MappedSaleError };
+
+/**
+ * Form submission payload: the idempotency UUID is mandatory at this boundary,
+ * so a sale can never reach the RPC without a pre-generated key.
+ */
+export type SaleSubmitPayload = SaleFormData & { id: string };
+
+export type SaleSubmitResult =
+  | { success: true }
+  | { success: false; error: MappedSaleError; catalogRefreshed?: boolean };
+
+/** Input of salesApi.createSale (amounts in som; converted to minor units by the mapper). */
+export interface CreateSaleInput {
+  id: string;
+  soldAt?: string;
+  paymentMethod: PaymentMethod;
+  receivedAmount?: number;
+  comment?: string;
+  receiptDiscountType: DiscountType;
+  receiptDiscountValue: number;
+  items: SaleItemInput[];
+}
+
+/** Result of rpc_create_sale as used by the client: no cost / profit (server-only values). */
+export interface CreateSaleResult {
+  id: string;
+  receiptNumber: string;
+  totalAmount: number;
+  changeAmount: number | null;
+  itemsCount: number;
+}
+
+export interface FetchSalesOptions {
+  signal?: AbortSignal;
+  /** Safety cap of receipts loaded into memory (default 5000). */
+  limit?: number;
+  /** Inclusive ISO lower bound for sold_at. */
+  soldFrom?: string;
+  /**
+   * Exclusive ISO upper bound for sold_at: calendar ranges are loaded as [soldFrom, soldBefore)
+   * with soldBefore = start of the day after the last day.
+   */
+  soldBefore?: string;
+}
+
+export interface FetchSalesResult {
+  sales: Sale[];
+  /** True when the safety limit was reached and older receipts were not loaded. */
+  isTruncated: boolean;
+  totalFetched: number;
+}
+
+export interface PendingSaleOperation {
+  id: string;
+  userId: string;
+  payload: SaleFormData;
+  submittedAt: string;
 }

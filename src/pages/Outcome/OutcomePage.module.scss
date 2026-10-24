@@ -60,8 +60,14 @@
   box-shadow: 0 1px 3px rgba(14, 165, 233, 0.3);
   transition: background-color $transition-fast, box-shadow $transition-fast;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background-color: $color-primary-hover;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 
   &:focus-visible {
@@ -72,6 +78,7 @@
     display: none; // On small mobile screens, the button in toolbar is used
   }
 }
+
 
 .toast {
   display: flex;
@@ -128,4 +135,102 @@
   &:focus-visible {
     @include focus-ring;
   }
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  padding: $spacing-md $spacing-lg;
+  background-color: #fef2f2;
+  border: 1px solid #fee2e2;
+  border-radius: $radius-lg;
+  color: #b91c1c;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.errorInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.errorText {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: #991b1b;
+}
+
+.retryBtn {
+  @include button-reset;
+  height: 34px;
+  padding: 0 14px;
+  gap: 6px;
+  background-color: #ef4444;
+  color: #ffffff;
+  border-radius: $radius-md;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  transition: background-color $transition-fast;
+  white-space: nowrap;
+
+  &:hover {
+    background-color: #dc2626;
+  }
+
+  &:focus-visible {
+    @include focus-ring(#ef4444);
+  }
+}
+
+.tableLoadingCard {
+  background-color: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  box-shadow: $shadow-card;
+  padding: $spacing-2xl $spacing-xl;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 280px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(14, 165, 233, 0.2);
+  border-top-color: $color-primary;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingText {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+}
+
+.truncatedNotice {
+  padding: 10px 14px;
+  background-color: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: $radius-md;
+  color: #0369a1;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

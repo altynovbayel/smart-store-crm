@@ -1,3 +1,15 @@
+import type { WarehouseCatalogProduct } from './warehouse';
+
+/**
+ * Catalog item of the Income form: an admin row of rpc_list_products. The purchase price is
+ * required (form default for a new line and the receipt price); a row without it is never
+ * accepted with a substituted 0.
+ */
+export interface IncomeCatalogProduct
+  extends Pick<WarehouseCatalogProduct, 'id' | 'sku' | 'name' | 'sellingPrice' | 'stock' | 'unit'> {
+  purchasePrice: number;
+}
+
 export interface IncomeReceiptItem {
   id: string;
   productId: string;
@@ -59,4 +71,61 @@ export interface FormItemState {
   productId: string;
   rawQuantity: string;
   rawPurchasePrice: string;
+}
+
+export interface MappedIncomeError {
+  message: string;
+  field?: string;
+  isNetworkError?: boolean;
+  isAuthError?: boolean;
+}
+
+export type IncomeApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: MappedIncomeError };
+
+export type CreateIncomeReceiptRpcItem = {
+  [key: string]: string | number;
+  product_id: string;
+  quantity: number;
+  purchase_price_minor: number;
+};
+
+export interface CreateIncomeReceiptRpcParams {
+  p_supplier: string;
+  p_supplier_document_number?: string;
+  p_received_at?: string;
+  p_comment?: string;
+  p_items: CreateIncomeReceiptRpcItem[];
+  p_id?: string;
+}
+
+export interface CreateIncomeReceiptInput {
+  id?: string;
+  supplier: string;
+  documentNumber?: string;
+  receivedAt?: string;
+  responsiblePerson?: string;
+  comment?: string;
+  items: IncomeReceiptItemInput[];
+}
+
+export interface CreateIncomeReceiptResult {
+  id: string;
+  receiptNumber: string;
+  totalAmount: number;
+  itemsCount: number;
+}
+
+export interface FetchIncomeReceiptsResult {
+  receipts: IncomeReceipt[];
+  isTruncated: boolean;
+  totalFetched: number;
+}
+
+export interface PendingIncomeOperation {
+  id: string;
+  userId: string;
+  payload: IncomeReceiptFormData;
+  submittedAt: string;
 }

@@ -1,11 +1,14 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { AlertCircle, RotateCcw } from 'lucide-react';
 import type {
   Sale,
   SalesHistoryFilters,
   SalesHistorySort,
 } from '../../types';
-import { useInventory } from '../../context';
+import { useAuth } from '../../context';
 import { formatCalendarDateKey } from '../../utils/dateUtils';
+import { getSalesHistoryServerRange } from '../../utils/salesHistoryRange';
+import { useSalesHistoryData } from './hooks/useSalesHistoryData';
 import {
   filterSalesHistory,
   sortSalesHistory,
@@ -21,8 +24,15 @@ import { SaleViewModal } from '../../components/sales';
 import { Pagination } from '../../components/warehouse/Pagination/Pagination';
 import styles from './SalesHistoryPage.module.scss';
 
+/**
+ * Sales history works directly with Supabase (sales + sale_items snapshots); InventoryContext is not used.
+ * - "Все": archive of the latest receipts (fetch limit 5000);
+ * - other periods: the server loads the calendar range [from, before), the existing client filter
+ *   keeps the exact UI semantics; search / payment / sort / pagination are client-side.
+ */
 export const SalesHistoryPage = () => {
-  const { sales } = useInventory();
+  const { user, isAdmin } = useAuth();
+  const userId = user?.id ?? null;
 
   // Filters state
   const [filters, setFilters] = useState<SalesHistoryFilters>({
@@ -45,6 +55,19 @@ export const SalesHistoryPage = () => {
 
   // Modal state for receipt details
   const [saleToView, setSaleToView] = useState<Sale | null>(null);
+  const saleToViewRef = useRef<Sale | null>(saleToView);
+  useEffect(() => {
+    saleToViewRef.current = saleToView;
+  }, [saleToView]);
+  const isModalOpen = useCallback(() => Boolean(saleToViewRef.current), []);
+
+  // Close the receipt on user switch, logout or role change
+  const accessKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+  const [prevAccessKey, setPrevAccessKey] = useState<string>(accessKey);
+  if (prevAccessKey !== accessKey) {
+    setPrevAccessKey(accessKey);
+    setSaleToView(null);
+  }
 
   // Search input ref for accessible focus restoration
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +94,23 @@ export const SalesHistoryPage = () => {
       clearInterval(interval);
     };
   }, []);
+
+  // Server range depends only on the period / custom dates and the calendar day
+  const serverRange = useMemo(
+    () =>
+      getSalesHistoryServerRange(
+        { period: filters.period, dateFrom: filters.dateFrom, dateTo: filters.dateTo },
+        currentDateKey
+      ),
+    [filters.period, filters.dateFrom, filters.dateTo, currentDateKey]
+  );
+
+  const { sales, isLoading, loadError, isTruncated, hasAnySales, retry } = useSalesHistoryData({
+    userId,
+    isAdmin,
+    range: serverRange,
+    isModalOpen,
+  });
 
   // Filtered sales based on search query, payment method, and period
   const filteredSales = useMemo(() => {
@@ -134,10 +174,13 @@ export const SalesHistoryPage = () => {
     });
   }, []);
 
+  // Never export a partial or stale report while the range is loading or failed
+  const isExportDisabled = sortedSales.length === 0 || isLoading || Boolean(loadError);
+
   const handleExportCSV = useCallback(() => {
-    if (sortedSales.length === 0) return;
+    if (isExportDisabled) return;
     exportSalesHistoryToCSV(sortedSales, currentDateKey);
-  }, [sortedSales, currentDateKey]);
+  }, [isExportDisabled, sortedSales, currentDateKey]);
 
   const handleViewSale = useCallback((s: Sale) => {
     setSaleToView(s);
@@ -159,6 +202,39 @@ export const SalesHistoryPage = () => {
         </div>
       </div>
 
+      {/* Truncated archive notice */}
+      {isTruncated && !isLoading && (
+        <div className={styles.truncatedNotice} role="note">
+          <AlertCircle size={16} aria-hidden="true" />
+          <span>
+            {serverRange.kind === 'all'
+              ? `Показан архив последних ${sales.length} чеков (достигнут лимит выборки).`
+              : `За выбранный период загружены последние ${sales.length} чеков (достигнут лимит выборки).`}{' '}
+            Статистика, таблица и CSV рассчитаны только по загруженным чекам — сузьте период для полного отчёта.
+          </span>
+        </div>
+      )}
+
+      {/* Load error with retry */}
+      {loadError && (
+        <div className={styles.errorBanner} role="alert">
+          <div className={styles.errorInfo}>
+            <AlertCircle size={20} />
+            <span className={styles.errorText}>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            data-retry-sales-history-btn
+            className={styles.retryBtn}
+            onClick={retry}
+            disabled={isLoading}
+          >
+            <RotateCcw size={14} />
+            <span>{isLoading ? 'Загрузка...' : 'Повторить'}</span>
+          </button>
+        </div>
+      )}
+
       {/* 4 Dynamic Statistics Cards */}
       <SalesHistoryStats summary={stats} />
 
@@ -168,32 +244,42 @@ export const SalesHistoryPage = () => {
         onFilterChange={handleFilterChange}
         onResetFilters={handleResetFilters}
         onExport={handleExportCSV}
-        isExportDisabled={sortedSales.length === 0}
+        isExportDisabled={isExportDisabled}
         currentDateKey={currentDateKey}
         searchInputRef={searchInputRef}
       />
 
-      {/* Sales History Table */}
-      <SalesHistoryTable
-        sales={paginatedSales}
-        totalCount={sales.length}
-        sort={sort}
-        onSortChange={handleSortChange}
-        hasActiveFilters={hasActiveFilters}
-        onResetFilters={handleResetFilters}
-        onViewSale={handleViewSale}
-      />
+      {/* Sales History Table with Loading State */}
+      {isLoading ? (
+        <div className={styles.tableLoadingCard}>
+          <div className={styles.spinner} role="progressbar" aria-label="Загрузка истории продаж" />
+          <span className={styles.loadingText}>Загрузка истории продаж...</span>
+        </div>
+      ) : (
+        <>
+          <SalesHistoryTable
+            sales={paginatedSales}
+            totalCount={sales.length}
+            sort={sort}
+            onSortChange={handleSortChange}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={handleResetFilters}
+            onViewSale={handleViewSale}
+            hasAnySales={loadError ? null : hasAnySales}
+          />
 
-      {/* Pagination */}
-      {sortedSales.length > pageSize && (
-        <Pagination
-          currentPage={safeCurrentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-          totalItems={sortedSales.length}
-          pageSize={pageSize}
-          itemLabel="чеков"
-        />
+          {/* Pagination */}
+          {sortedSales.length > pageSize && (
+            <Pagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={sortedSales.length}
+              pageSize={pageSize}
+              itemLabel="чеков"
+            />
+          )}
+        </>
       )}
 
       {/* Receipt View Modal */}
@@ -202,6 +288,7 @@ export const SalesHistoryPage = () => {
         sale={saleToView}
         onClose={handleCloseViewModal}
         fallbackFocusSelector="[data-sales-history-search]"
+        showCostDetails={isAdmin}
       />
     </div>
   );

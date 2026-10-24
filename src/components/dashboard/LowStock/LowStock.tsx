@@ -12,7 +12,7 @@ export const LowStock = ({ items }: LowStockProps) => {
     <div className={styles.container}>
       <header className={styles.header}>
         <h2 className={styles.title}>Товары, которые заканчиваются</h2>
-        <Link to="/warehouse" className={styles.actionLink}>
+        <Link to="/warehouse" className={styles.actionLink} data-dashboard-low-stock-link>
           Все товары
         </Link>
       </header>

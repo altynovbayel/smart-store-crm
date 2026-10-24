@@ -9,6 +9,8 @@ export interface BarcodeScannerFieldProps {
   error: string | null;
   successMessage: string | null;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  /** Disabled while the sale is being conducted. */
+  disabled?: boolean;
 }
 
 export const BarcodeScannerField = ({
@@ -18,6 +20,7 @@ export const BarcodeScannerField = ({
   error,
   successMessage,
   inputRef,
+  disabled = false,
 }: BarcodeScannerFieldProps) => {
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     onChange(e.target.value);
@@ -25,9 +28,12 @@ export const BarcodeScannerField = ({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
+      // Hardware scanners terminate with Enter: never submit the surrounding form
       e.preventDefault();
       e.stopPropagation();
-      onScan(value);
+      if (!disabled) {
+        onScan(value);
+      }
     }
   };
 
@@ -54,6 +60,7 @@ export const BarcodeScannerField = ({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          disabled={disabled}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={describedBy}
           autoComplete="off"

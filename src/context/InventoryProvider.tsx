@@ -173,7 +173,7 @@ const inventoryReducer = (
           if (saleTime < effectiveFrom) return false;
           if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
           return s.items.some(
-            (si) => si.productId === oldProduct.id && Math.abs(si.purchasePriceSnapshot - newPurchasePrice) > 0.001
+            (si) => si.productId === oldProduct.id && si.purchasePriceSnapshot !== null && Math.abs(si.purchasePriceSnapshot - newPurchasePrice) > 0.001
           );
         });
         if (hasConflictingSale) {
@@ -330,7 +330,7 @@ const inventoryReducer = (
           if (saleTime < receiptTime) return false;
           if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
           return s.items.some(
-            (si) => si.productId === prod.id && Math.abs(si.purchasePriceSnapshot - item.purchasePrice) > 0.001
+            (si) => si.productId === prod.id && si.purchasePriceSnapshot !== null && Math.abs(si.purchasePriceSnapshot - item.purchasePrice) > 0.001
           );
         });
         if (hasConflictingSale) return state;
@@ -968,7 +968,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           if (saleTime < effectiveFrom) return false;
           if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
           return s.items.some(
-            (si) => si.productId === oldProduct.id && Math.abs(si.purchasePriceSnapshot - newPurchasePrice) > 0.001
+            (si) => si.productId === oldProduct.id && si.purchasePriceSnapshot !== null && Math.abs(si.purchasePriceSnapshot - newPurchasePrice) > 0.001
           );
         });
         if (hasConflictingSale) {
@@ -1127,7 +1127,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           if (saleTime < receiptTime) return false;
           if (nextPriceTime !== null && saleTime >= nextPriceTime) return false;
           return s.items.some(
-            (si) => si.productId === target.id && Math.abs(si.purchasePriceSnapshot - item.purchasePrice) > 0.001
+            (si) => si.productId === target.id && si.purchasePriceSnapshot !== null && Math.abs(si.purchasePriceSnapshot - item.purchasePrice) > 0.001
           );
         });
 

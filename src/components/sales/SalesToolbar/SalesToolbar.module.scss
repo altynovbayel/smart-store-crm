@@ -159,9 +159,14 @@
   box-shadow: $shadow-sm;
   transition: background-color $transition-fast, box-shadow $transition-fast;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background-color: $color-primary-hover;
     box-shadow: $shadow-md;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   &:focus-visible {

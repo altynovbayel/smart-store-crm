@@ -1,4 +1,4 @@
-export type * from './product';
+export * from './product';
 export * from './sale';
 export type * from './warehouse';
 export type * from './report';
@@ -8,3 +8,7 @@ export * from './salesHistory';
 export * from './reports';
 export type * from './auth';
 export type * from './database.types';
+export type * from './apiError';
+export type * from './dashboard';
+export * from './salesRpc';
+export * from './priceHistoryRpc';

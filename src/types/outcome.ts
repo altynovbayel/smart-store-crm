@@ -1,3 +1,5 @@
+import type { ApiErrorKind, MappedApiError } from './apiError';
+
 export type OutcomeReason =
   | 'damaged'
   | 'defective'
@@ -71,4 +73,79 @@ export interface OutcomeSummary {
   todayUnits: number;
   todayCost: number;
   monthCount: number;
+}
+
+/** Outcome errors use the shared classification (see ApiErrorKind). */
+export type OutcomeErrorKind = ApiErrorKind;
+
+export type MappedOutcomeError = MappedApiError;
+
+export type OutcomeApiResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: MappedOutcomeError };
+
+/**
+ * Form submission payload: the idempotency UUID is mandatory at this boundary,
+ * so an operation can never reach the RPC without a pre-generated key.
+ */
+export type OutcomeSubmitPayload = OutcomeFormData & { id: string };
+
+export type OutcomeSubmitResult =
+  | { success: true }
+  | { success: false; error: MappedOutcomeError };
+
+export type CreateOutcomeDocumentRpcItem = {
+  [key: string]: string | number;
+  product_id: string;
+  quantity: number;
+};
+
+export interface CreateOutcomeDocumentRpcParams {
+  p_reason: OutcomeReason;
+  p_reason_comment?: string;
+  p_occurred_at?: string;
+  p_items: CreateOutcomeDocumentRpcItem[];
+  p_id: string;
+}
+
+export interface CreateOutcomeDocumentInput {
+  id: string;
+  reason: OutcomeReason;
+  documentDate?: string;
+  responsiblePerson?: string;
+  comment?: string;
+  items: OutcomeItemInput[];
+}
+
+export interface CreateOutcomeDocumentResult {
+  id: string;
+  documentNumber: string;
+  totalCost: number;
+  itemsCount: number;
+}
+
+export interface FetchOutcomeDocumentsResult {
+  documents: OutcomeDocument[];
+  isTruncated: boolean;
+  totalFetched: number;
+}
+
+export interface PendingOutcomeOperation {
+  id: string;
+  userId: string;
+  payload: OutcomeFormData;
+  submittedAt: string;
+}
+
+export type HistoricalPriceSource =
+  | 'exact_history'
+  | 'earliest_history'
+  | 'catalog_fallback';
+
+export interface HistoricalPriceResult {
+  productId: string;
+  purchasePrice: number;
+  purchasePriceMinor: number;
+  source: HistoricalPriceSource;
+  effectiveFrom: string | null;
 }

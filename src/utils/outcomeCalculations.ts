@@ -1,12 +1,22 @@
 import type {
+  OutcomeDocument,
+  OutcomeFilters,
   OutcomeFormData,
   OutcomeFormItemState,
   OutcomeReason,
+  OutcomeSummary,
   Product,
+  HistoricalPriceResult,
 } from '../types';
-import { parseCustomDate, normalizeDocumentTimestamp } from './dateUtils';
+import {
+  parseCustomDate,
+  normalizeDocumentTimestamp,
+  isToday,
+  isWithinDays,
+} from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
 import { getHistoricalPurchasePrice } from './productUtils';
+
 
 /**
  * Utility functions for outcome (write-off) calculations and form validations.
@@ -37,16 +47,19 @@ export interface OutcomeTotals {
   totalUnits: number;
   totalCost: number;
   isOverflow: boolean;
+  isAccurate: boolean;
 }
 
 export const calculateOutcomeTotals = (
   items: OutcomeFormItemState[],
   activeProducts: Product[],
-  documentDate?: string
+  documentDate?: string,
+  historicalPrices?: Record<string, HistoricalPriceResult>
 ): OutcomeTotals => {
   let totalUnits = 0;
   let totalCents = 0;
   let isOverflow = false;
+  let isAccurate = Boolean(historicalPrices);
 
   const docTimestamp = normalizeDocumentTimestamp(documentDate);
 
@@ -55,8 +68,22 @@ export const calculateOutcomeTotals = (
     const product = activeProducts.find((p) => p.id === it.productId);
     if (q !== null && product) {
       totalUnits += q;
-      const purchasePrice = getHistoricalPurchasePrice(product, docTimestamp);
-      const lineCents = q * toCents(purchasePrice);
+      let lineCents: number;
+
+      if (historicalPrices) {
+        const hist = historicalPrices[it.productId];
+        if (hist) {
+          lineCents = q * hist.purchasePriceMinor;
+        } else {
+          isAccurate = false;
+          lineCents = q * toCents(product.purchasePrice);
+        }
+      } else {
+        isAccurate = false;
+        const purchasePrice = getHistoricalPurchasePrice(product, docTimestamp);
+        lineCents = q * toCents(purchasePrice);
+      }
+
       if (
         !Number.isSafeInteger(lineCents) ||
         !Number.isSafeInteger(totalCents + lineCents)
@@ -72,6 +99,7 @@ export const calculateOutcomeTotals = (
     totalUnits,
     totalCost: isOverflow ? 0 : fromCents(totalCents),
     isOverflow,
+    isAccurate,
   };
 };
 
@@ -87,7 +115,9 @@ export const validateOutcomeForm = (
   responsiblePerson: string,
   comment: string,
   items: OutcomeFormItemState[],
-  activeProducts: Product[]
+  activeProducts: Product[],
+  historicalPrices?: Record<string, HistoricalPriceResult>,
+  isRetrySubmission = false
 ): ValidationResult => {
   const errors: Record<string, string> = {};
 
@@ -137,13 +167,13 @@ export const validateOutcomeForm = (
     seenProductIds.add(it.productId);
 
     const product = activeProducts.find((p) => p.id === it.productId);
-    if (!product || product.isArchived) {
+    if (!isRetrySubmission && (!product || product.isArchived)) {
       errors[`item-${it.id}-product`] = `Строка ${rowNum}: товар не найден или архивирован`;
       return;
     }
 
-    // Check available stock
-    if (product.stock <= 0) {
+    // Check available stock (only for initial submissions; on retry of an unconfirmed operation, stock may have already been deducted on the server)
+    if (!isRetrySubmission && product && product.stock <= 0) {
       errors[`item-${it.id}-qty`] = `Строка ${rowNum}: товар отсутствует на складе (остаток 0)`;
       return;
     }
@@ -165,14 +195,18 @@ export const validateOutcomeForm = (
       return;
     }
 
-    if (q > product.stock) {
+    if (!isRetrySubmission && product && q > product.stock) {
       errors[`item-${it.id}-qty`] = `Строка ${rowNum}: списание (${q}) превышает остаток (${product.stock} ${product.unit})`;
       return;
     }
 
-    const docTimestamp = normalizeDocumentTimestamp(documentDate);
-    const purchasePrice = getHistoricalPurchasePrice(product, docTimestamp);
-    const lineCents = q * toCents(purchasePrice);
+    // Cost overflow is checked only against the price the RPC will actually use.
+    // Without a resolved historical price (history not loaded) or on retry of an unconfirmed
+    // operation, an approximate catalog price must not block submission: the server validates bounds.
+    const resolvedPrice = historicalPrices?.[it.productId];
+    const lineCents =
+      resolvedPrice && !isRetrySubmission ? q * resolvedPrice.purchasePriceMinor : 0;
+
     if (
       !Number.isSafeInteger(lineCents) ||
       !Number.isSafeInteger(docTotalCents + lineCents)
@@ -183,7 +217,7 @@ export const validateOutcomeForm = (
 
     docTotalCents += lineCents;
     validatedItems.push({
-      productId: product.id,
+      productId: it.productId,
       quantity: q,
     });
   });
@@ -207,4 +241,77 @@ export const validateOutcomeForm = (
       items: validatedItems,
     },
   };
+};
+
+/**
+ * Calculates aggregate stats across all loaded outcome documents.
+ */
+export const calculateOutcomeSummaryStats = (
+  documents: OutcomeDocument[],
+  currentDateKey: string
+): OutcomeSummary => {
+  let todayCount = 0;
+  let todayUnits = 0;
+  let todayCost = 0;
+  let monthCount = 0;
+
+  for (const doc of documents) {
+    if (isToday(doc.documentDate, currentDateKey)) {
+      todayCount += 1;
+      todayUnits += doc.totalQuantity;
+      todayCost += doc.totalCost;
+    }
+    if (isWithinDays(doc.documentDate, 30, currentDateKey)) {
+      monthCount += 1;
+    }
+  }
+
+  return {
+    todayCount,
+    todayUnits,
+    todayCost,
+    monthCount,
+  };
+};
+
+/**
+ * Filters outcome documents based on search query, reason, and period.
+ */
+export const filterOutcomeDocuments = (
+  documents: OutcomeDocument[],
+  filters: OutcomeFilters,
+  currentDateKey: string
+): OutcomeDocument[] => {
+  return documents.filter((doc) => {
+    // 1. Search Query (outcomeNumber, comment, item names, item SKUs)
+    if (filters.searchQuery.trim()) {
+      const q = filters.searchQuery.trim().toLowerCase();
+      const matchNumber = doc.outcomeNumber.toLowerCase().includes(q);
+      const matchComment = doc.comment ? doc.comment.toLowerCase().includes(q) : false;
+      const matchItems = doc.items.some(
+        (it) =>
+          it.productName.toLowerCase().includes(q) ||
+          it.sku.toLowerCase().includes(q)
+      );
+      if (!matchNumber && !matchComment && !matchItems) {
+        return false;
+      }
+    }
+
+    // 2. Reason Filter
+    if (filters.reason !== 'all' && doc.reason !== filters.reason) {
+      return false;
+    }
+
+    // 3. Period Filter
+    if (filters.period === 'today') {
+      if (!isToday(doc.documentDate, currentDateKey)) return false;
+    } else if (filters.period === 'week') {
+      if (!isWithinDays(doc.documentDate, 7, currentDateKey)) return false;
+    } else if (filters.period === 'month') {
+      if (!isWithinDays(doc.documentDate, 30, currentDateKey)) return false;
+    }
+
+    return true;
+  });
 };

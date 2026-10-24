@@ -272,6 +272,81 @@
   line-height: 1.4;
 }
 
+.centerStateBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-2xl $spacing-lg;
+  text-align: center;
+  background-color: #f8fafc;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  gap: 10px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(14, 165, 233, 0.2);
+  border-top-color: $color-primary;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingText {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+}
+
+.errorStateBox {
+  background-color: #fef2f2;
+  border-color: #fee2e2;
+}
+
+.errorTitle {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-danger;
+}
+
+.errorText {
+  font-size: $font-size-xs;
+  color: $color-text-secondary;
+  max-width: 320px;
+  line-height: 1.4;
+}
+
+.retryBtn {
+  @include button-reset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  background-color: $color-primary;
+  color: #ffffff;
+  border-radius: $radius-md;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  margin-top: 4px;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-primary-hover;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
 .closeActionBtn {
   @include button-reset;
   height: 36px;

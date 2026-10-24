@@ -1,17 +1,20 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import type { Product, ProductCategory, ProductFormData } from '../../../types';
-import { restoreFocusWithFallback } from '../../../utils/focusUtils';
+import { PRODUCT_CATEGORIES, DEFAULT_PRODUCT_CATEGORY } from '../../../types';
+import { isProductCategory } from '../../../utils/productUtils';
+import { restoreFocusWithFallback, getFocusableElements } from '../../../utils/focusUtils';
 import styles from './ProductFormModal.module.scss';
 
 export interface ProductFormModalProps {
   isOpen: boolean;
   productToEdit?: Product | null;
   existingProducts: Product[];
+  isSubmitting?: boolean;
   onClose: () => void;
   onSubmit: (
     data: ProductFormData
-  ) => { success: boolean; error?: string; field?: 'stock' | 'purchasePrice' } | void;
+  ) => Promise<{ success: boolean; error?: string; field?: 'stock' | 'purchasePrice' | 'sellingPrice' | 'sku' | 'barcode' | 'name' | 'reason' }> | { success: boolean; error?: string; field?: 'stock' | 'purchasePrice' | 'sellingPrice' | 'sku' | 'barcode' | 'name' | 'reason' } | void;
 }
 
 interface ProductFormRawState {
@@ -30,11 +33,14 @@ export const ProductFormModal = ({
   isOpen,
   productToEdit,
   existingProducts,
+  isSubmitting = false,
   onClose,
   onSubmit,
 }: ProductFormModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const isSubmittingRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
 
   // Initialize state directly with strings to prevent partial inputs from coercing to 0
   const [formData, setFormData] = useState<ProductFormRawState>(() => {
@@ -51,12 +57,11 @@ export const ProductFormModal = ({
         stock: String(productToEdit.stock),
       };
     }
-    const nextId = existingProducts.length + 1;
     return {
       name: '',
-      sku: `SS-NEW-${String(nextId).padStart(3, '0')}`,
-      barcode: `470001001${String(nextId).padStart(3, '0')}`,
-      category: 'cases',
+      sku: '',
+      barcode: '',
+      category: DEFAULT_PRODUCT_CATEGORY,
       description: '',
       purchasePrice: '',
       sellingPrice: '',
@@ -66,9 +71,16 @@ export const ProductFormModal = ({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [localSubmitting, setLocalSubmitting] = useState(false);
+  const effectiveSubmitting = Boolean(isSubmitting || localSubmitting);
+
+  useEffect(() => {
+    isSubmittingRef.current = effectiveSubmitting;
+  }, [effectiveSubmitting]);
 
   // Focus trap, initial focus, and cleanup focus restoration
   useEffect(() => {
+    isMountedRef.current = true;
     if (!isOpen) return;
 
     // Capture active element before opening
@@ -84,18 +96,36 @@ export const ProductFormModal = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (!isSubmittingRef.current) {
+          onClose();
+        }
         return;
       }
 
       if (e.key === 'Tab' && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
+        const focusable = getFocusableElements(modalRef.current);
+        if (focusable.length === 0) {
+          e.preventDefault();
+          modalRef.current.focus();
+          return;
+        }
 
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
+
+        // If focus is currently on the modal card itself or outside
+        if (
+          document.activeElement === modalRef.current ||
+          !modalRef.current.contains(document.activeElement)
+        ) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            last.focus();
+          } else {
+            first.focus();
+          }
+          return;
+        }
 
         if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
@@ -110,6 +140,7 @@ export const ProductFormModal = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      isMountedRef.current = false;
       document.body.classList.remove('drawer-open');
       window.removeEventListener('keydown', handleKeyDown);
 
@@ -254,27 +285,54 @@ export const ProductFormModal = ({
     };
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (effectiveSubmitting) return;
+
     const result = validate();
     if (result.isValid && result.data) {
-      const res = onSubmit(result.data);
-      if (res && !res.success) {
-        const err = res.error || 'Ошибка при сохранении товара';
-        const fieldKey = res.field || (/остат|движени/i.test(err) ? 'stock' : 'purchasePrice');
-        setErrors((prev) => ({
-          ...prev,
-          [fieldKey]: err,
-        }));
-        requestAnimationFrame(() => {
-          const targetField = modalRef.current?.querySelector<HTMLElement>(
-            fieldKey === 'stock' ? '#prod-stock' : '#prod-purchase'
-          );
-          targetField?.focus();
-        });
-        return;
+      setLocalSubmitting(true);
+      try {
+        const res = await onSubmit(result.data);
+        if (!isMountedRef.current) return;
+
+        if (res && !res.success) {
+          const err = res.error || 'Ошибка при сохранении товара';
+          const fieldKey = res.field;
+
+          if (fieldKey) {
+            setErrors((prev) => ({
+              ...prev,
+              [fieldKey]: err,
+            }));
+          } else {
+            setErrors((prev) => ({
+              ...prev,
+              general: err,
+            }));
+          }
+
+          requestAnimationFrame(() => {
+            let selector = '#prod-name';
+            if (fieldKey === 'sku') selector = '#prod-sku';
+            else if (fieldKey === 'barcode') selector = '#prod-barcode';
+            else if (fieldKey === 'purchasePrice') selector = '#prod-purchase';
+            else if (fieldKey === 'sellingPrice') selector = '#prod-selling';
+            else if (fieldKey === 'stock') selector = productToEdit ? '#prod-name' : '#prod-stock';
+            else if (fieldKey === 'name') selector = '#prod-name';
+
+            const targetField = modalRef.current?.querySelector<HTMLElement>(selector);
+            targetField?.focus();
+          });
+          return;
+        }
+
+        onClose();
+      } finally {
+        if (isMountedRef.current) {
+          setLocalSubmitting(false);
+        }
       }
-      onClose();
     } else {
       requestAnimationFrame(() => {
         const firstInvalid = modalRef.current?.querySelector<HTMLElement>(
@@ -286,10 +344,16 @@ export const ProductFormModal = ({
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div
+      className={styles.modalOverlay}
+      onClick={() => {
+        if (!effectiveSubmitting) onClose();
+      }}
+    >
       <div
         className={styles.modalCard}
         ref={modalRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -310,6 +374,7 @@ export const ProductFormModal = ({
             type="button"
             className={styles.closeBtn}
             onClick={onClose}
+            disabled={effectiveSubmitting}
             aria-label="Закрыть модальное окно"
           >
             <X size={20} />
@@ -318,6 +383,13 @@ export const ProductFormModal = ({
 
         <form onSubmit={handleSubmit} className={styles.form} noValidate>
           <div className={styles.scrollableContent}>
+            {errors.general && (
+              <div role="alert" className={styles.errorAlert}>
+                <AlertCircle size={16} />
+                <span>{errors.general}</span>
+              </div>
+            )}
+
             {/* Name */}
             <div className={styles.formGroup}>
               <label htmlFor="prod-name" className={styles.label}>
@@ -326,6 +398,7 @@ export const ProductFormModal = ({
               <input
                 id="prod-name"
                 type="text"
+                disabled={effectiveSubmitting}
                 className={`${styles.input} ${errors.name ? styles.inputError : ''}`}
                 placeholder="Например: Чехол iPhone 15 Pro Silicone"
                 value={formData.name}
@@ -351,6 +424,7 @@ export const ProductFormModal = ({
                 <input
                   id="prod-sku"
                   type="text"
+                  disabled={effectiveSubmitting}
                   className={`${styles.input} ${errors.sku ? styles.inputError : ''}`}
                   placeholder="SS-IP15P-001"
                   value={formData.sku}
@@ -374,6 +448,7 @@ export const ProductFormModal = ({
                 <input
                   id="prod-barcode"
                   type="text"
+                  disabled={effectiveSubmitting}
                   className={`${styles.input} ${errors.barcode ? styles.inputError : ''}`}
                   placeholder="470001001001"
                   value={formData.barcode}
@@ -398,23 +473,24 @@ export const ProductFormModal = ({
               </label>
               <select
                 id="prod-category"
+                disabled={effectiveSubmitting}
                 className={styles.select}
                 value={formData.category}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    category: e.target.value as ProductCategory,
-                  })
-                }
+                onChange={(e) => {
+                  const nextCategory = e.target.value;
+                  if (isProductCategory(nextCategory)) {
+                    setFormData({
+                      ...formData,
+                      category: nextCategory,
+                    });
+                  }
+                }}
               >
-                <option value="cases">Чехлы</option>
-                <option value="cables">Кабели</option>
-                <option value="glass">Защитные стёкла</option>
-                <option value="powerbanks">Power Bank</option>
-                <option value="headphones">Наушники</option>
-                <option value="adapters">Адаптеры</option>
-                <option value="memory">Карты памяти</option>
-                <option value="holders">Автодержатели</option>
+                {PRODUCT_CATEGORIES.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -426,6 +502,7 @@ export const ProductFormModal = ({
               <input
                 id="prod-desc"
                 type="text"
+                disabled={effectiveSubmitting}
                 className={styles.input}
                 placeholder="Силиконовый чехол soft-touch, быстрая зарядка и т.д."
                 value={formData.description}
@@ -445,6 +522,7 @@ export const ProductFormModal = ({
                   id="prod-purchase"
                   type="text"
                   inputMode="decimal"
+                  disabled={effectiveSubmitting}
                   className={`${styles.input} ${errors.purchasePrice ? styles.inputError : ''}`}
                   value={formData.purchasePrice}
                   placeholder="0.00"
@@ -472,6 +550,7 @@ export const ProductFormModal = ({
                   id="prod-selling"
                   type="text"
                   inputMode="decimal"
+                  disabled={effectiveSubmitting}
                   className={`${styles.input} ${errors.sellingPrice ? styles.inputError : ''}`}
                   value={formData.sellingPrice}
                   placeholder="0.00"
@@ -496,18 +575,25 @@ export const ProductFormModal = ({
             <div className={styles.twoCol}>
               <div className={styles.formGroup}>
                 <label htmlFor="prod-stock" className={styles.label}>
-                  {productToEdit ? 'Текущий остаток (шт.)' : 'Начальный остаток (шт.)'}{' '}
+                  {productToEdit ? 'Остаток на складе (шт.)' : 'Начальный остаток (шт.)'}{' '}
                   <span className={styles.req}>*</span>
                 </label>
                 <input
                   id="prod-stock"
                   type="text"
                   inputMode="numeric"
+                  disabled={Boolean(productToEdit) || effectiveSubmitting}
                   className={`${styles.input} ${errors.stock ? styles.inputError : ''}`}
                   value={formData.stock}
                   placeholder="0"
                   aria-invalid={errors.stock ? 'true' : undefined}
-                  aria-describedby={errors.stock ? 'prod-stock-error' : undefined}
+                  aria-describedby={
+                    errors.stock
+                      ? 'prod-stock-error'
+                      : productToEdit
+                        ? 'prod-stock-helper'
+                        : undefined
+                  }
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -515,6 +601,11 @@ export const ProductFormModal = ({
                     })
                   }
                 />
+                {productToEdit && (
+                  <span id="prod-stock-helper" className={styles.fieldHelper}>
+                    Остаток изменяется через отдельное действие «Корректировать остаток».
+                  </span>
+                )}
                 {errors.stock && (
                   <span id="prod-stock-error" role="alert" className={styles.errorText}>
                     <AlertCircle size={12} /> {errors.stock}
@@ -530,6 +621,7 @@ export const ProductFormModal = ({
                   id="prod-min-stock"
                   type="text"
                   inputMode="numeric"
+                  disabled={effectiveSubmitting}
                   className={`${styles.input} ${errors.minStockThreshold ? styles.inputError : ''}`}
                   value={formData.minStockThreshold}
                   placeholder="10"
@@ -556,14 +648,20 @@ export const ProductFormModal = ({
               type="button"
               className={styles.cancelBtn}
               onClick={onClose}
+              disabled={effectiveSubmitting}
             >
               Отмена
             </button>
             <button
               type="submit"
               className={styles.submitBtn}
+              disabled={effectiveSubmitting}
             >
-              {productToEdit ? 'Сохранить изменения' : 'Добавить товар'}
+              {effectiveSubmitting
+                ? 'Сохранение...'
+                : productToEdit
+                  ? 'Сохранить изменения'
+                  : 'Добавить товар'}
             </button>
           </footer>
         </form>

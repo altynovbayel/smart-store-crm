@@ -9,7 +9,10 @@ export interface SalesStatsProps {
 
 export const SalesStats = ({ summary }: SalesStatsProps) => {
   return (
-    <div className={styles.statsGrid} aria-label="Статистика продаж">
+    <div
+      className={`${styles.statsGrid} ${summary.todayProfit === null ? styles.statsGridThree : ''}`}
+      aria-label="Статистика продаж"
+    >
       {/* 1. Выручка сегодня */}
       <div className={styles.statCard}>
         <div className={`${styles.iconBox} ${styles.iconGreen}`} aria-hidden="true">
@@ -43,16 +46,18 @@ export const SalesStats = ({ summary }: SalesStatsProps) => {
         </div>
       </div>
 
-      {/* 4. Прибыль сегодня */}
-      <div className={styles.statCard}>
-        <div className={`${styles.iconBox} ${styles.iconOrange}`} aria-hidden="true">
-          <Coins size={22} />
+      {/* 4. Прибыль сегодня (admin only) */}
+      {summary.todayProfit !== null && (
+        <div className={styles.statCard}>
+          <div className={`${styles.iconBox} ${styles.iconOrange}`} aria-hidden="true">
+            <Coins size={22} />
+          </div>
+          <div className={styles.content}>
+            <span className={styles.title}>Прибыль сегодня</span>
+            <span className={styles.value}>{formatCurrency(summary.todayProfit)}</span>
+          </div>
         </div>
-        <div className={styles.content}>
-          <span className={styles.title}>Прибыль сегодня</span>
-          <span className={styles.value}>{formatCurrency(summary.todayProfit)}</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

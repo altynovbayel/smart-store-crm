@@ -6,17 +6,20 @@ import styles from './AttentionProductsTable.module.scss';
 
 export interface AttentionProductsTableProps {
   items: AttentionProductItem[];
+  /** Total number of products requiring attention when only the first N are listed. */
+  totalCount?: number;
 }
 
-export const AttentionProductsTable = ({ items }: AttentionProductsTableProps) => {
+export const AttentionProductsTable = ({ items, totalCount }: AttentionProductsTableProps) => {
+  const total = totalCount ?? items.length;
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.titleGroup}>
           <AlertTriangle size={20} className={styles.titleIcon} aria-hidden="true" />
           <h3 className={styles.title}>Товары, требующие внимания</h3>
-          {items.length > 0 && (
-            <span className={styles.countBadge}>{items.length}</span>
+          {total > 0 && (
+            <span className={styles.countBadge}>{total}</span>
           )}
         </div>
 
@@ -92,6 +95,11 @@ export const AttentionProductsTable = ({ items }: AttentionProductsTableProps) =
               ))}
             </tbody>
           </table>
+          {total > items.length && (
+            <p className={styles.limitNote} role="note">
+              Показаны {items.length} из {total}. Полный список — в CSV-экспорте склада.
+            </p>
+          )}
         </div>
       )}
     </div>

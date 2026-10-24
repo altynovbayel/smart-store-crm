@@ -6,8 +6,9 @@ import {
   useMemo,
   type ReactNode,
 } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
+import { REALTIME_SUBSCRIBE_STATES, type User, type Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { mapMyProfileResponse, MyProfileDataError } from '../api/auth';
 import { AuthContext } from './AuthContext';
 import type {
   AuthStatus,
@@ -18,6 +19,11 @@ import type {
 export interface AuthProviderProps {
   children: ReactNode;
 }
+
+/** Fallback profile re-check period while the tab is visible (Realtime may drop silently). */
+const PROFILE_RECHECK_INTERVAL_MS = 60_000;
+/** Minimum gap between profile re-checks triggered by Realtime subscription errors. */
+const PROFILE_ERROR_RECHECK_MIN_MS = 30_000;
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -34,6 +40,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const inactiveMessageRef = useRef<string | null>(null);
   const signOutPromiseRef = useRef<Promise<{ success: boolean; error?: string }> | null>(null);
   const currentUserRef = useRef<User | null>(null);
+  const profileCheckRef = useRef({ running: false, rerun: false });
 
 
 
@@ -57,11 +64,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentSession.user.id)
-        .maybeSingle();
+      // Own profile only (auth.uid() on the server); no direct SELECT on public.profiles
+      const { data: response, error } = await supabase.rpc('rpc_get_my_profile');
 
       if (error) {
         return {
@@ -73,7 +77,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         };
       }
 
-      if (!data || !data.is_active || (data.role !== 'admin' && data.role !== 'cashier')) {
+      let data: UserProfile | null;
+      try {
+        data = mapMyProfileResponse(response, currentSession.user.id);
+      } catch (parseError: unknown) {
+        if (!(parseError instanceof MyProfileDataError)) throw parseError;
+        return {
+          status: 'error',
+          user: currentSession.user,
+          session: currentSession,
+          profile: null,
+          error: parseError.message,
+        };
+      }
+
+      if (!data || !data.is_active) {
         return {
           status: 'inactive',
           user: null,
@@ -205,36 +223,113 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     [performSignOut]
   );
 
+  /**
+   * Background re-check of the signed-in user's profile (Realtime event, tab focus, fallback timer).
+   * At most one check runs at a time; triggers arriving meanwhile schedule exactly one more run, so a
+   * change made while a request was in flight is not lost. A check stops as soon as the user signs
+   * out, starts signing in or the session belongs to another user.
+   */
+  const requestProfileCheck = useCallback(() => {
+    const check = profileCheckRef.current;
+    if (check.running) {
+      check.rerun = true;
+      return;
+    }
+    check.running = true;
+
+    const isIdle = () => !isMountedRef.current || isSigningInRef.current || isSigningOutRef.current;
+
+    void (async () => {
+      try {
+        do {
+          check.rerun = false;
+          const expectedUserId = currentUserRef.current?.id;
+          if (isIdle() || !expectedUserId) break;
+
+          const {
+            data: { session: s },
+          } = await supabase.auth.getSession();
+          if (isIdle() || s?.user?.id !== expectedUserId || currentUserRef.current?.id !== expectedUserId) break;
+
+          await applySession(s, true);
+        } while (check.rerun);
+      } catch {
+        // Session read failed: keep the current state; the next trigger retries
+      } finally {
+        check.running = false;
+        check.rerun = false;
+      }
+    })();
+  }, [applySession]);
+
   useEffect(() => {
     currentUserRef.current = user;
-    if (!user) return;
+  }, [user]);
 
-    // Realtime subscription on public.profiles to immediately reflect role updates and account deactivation
+  // Keyed by the user id, not the User object: every background profile check stores a new User
+  // object from getSession(), which must not tear down and re-join the Realtime channel.
+  const userId = user?.id ?? null;
+
+  useEffect(() => {
+    if (!userId) return;
+
+    // A failed subscription (join error, timeout, or a postgres_changes system error such as a
+    // rejected filter) means updates may not arrive: re-check the profile at once, at most once per
+    // PROFILE_ERROR_RECHECK_MIN_MS so the client's automatic re-joins cannot cause a request loop.
+    let lastErrorCheckAt = 0;
+    const handleSubscriptionError = () => {
+      const now = Date.now();
+      if (now - lastErrorCheckAt < PROFILE_ERROR_RECHECK_MIN_MS) return;
+      lastErrorCheckAt = now;
+      requestProfileCheck();
+    };
+
+    // Realtime subscription on the user's own public.profiles row to immediately reflect role updates
+    // and account deactivation. UPDATE only: the profile exists before the first sign-in, and per the
+    // Supabase docs DELETE events are not filtered and not RLS-checked (a deleted account is caught
+    // by the fallback check: rpc_get_my_profile returns null). The payload is never read; only the
+    // columns the client may SELECT (migration 20261023100000) are requested.
     const channel = supabase
-      .channel(`profile-updates-${user.id}`)
+      .channel(`profile-updates-${userId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'UPDATE',
           schema: 'public',
           table: 'profiles',
-          filter: `id=eq.${user.id}`,
+          filter: `id=eq.${userId}`,
+          select: ['id', 'role', 'is_active'],
         },
         () => {
-          supabase.auth.getSession().then(({ data: { session: s } }) => {
-            if (!isMountedRef.current || isSigningInRef.current || isSigningOutRef.current) return;
-            if (s?.user?.id === user.id) {
-              applySession(s, true);
-            }
-          }).catch(() => {});
+          requestProfileCheck();
         }
       )
-      .subscribe();
+      .on('system', {}, (payload: { status?: unknown }) => {
+        if (payload?.status === 'error') {
+          handleSubscriptionError();
+        }
+      })
+      .subscribe((subscribeStatus) => {
+        if (
+          subscribeStatus === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+          subscribeStatus === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
+        ) {
+          handleSubscriptionError();
+        }
+      });
+
+    // Fallback while the tab is visible, in case the Realtime connection silently drops
+    const fallbackTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        requestProfileCheck();
+      }
+    }, PROFILE_RECHECK_INTERVAL_MS);
 
     return () => {
+      window.clearInterval(fallbackTimer);
       supabase.removeChannel(channel);
     };
-  }, [user, applySession]);
+  }, [userId, requestProfileCheck]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -337,12 +432,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // 3. Proactively refresh profile on window focus or visibility change
     const handleWindowFocus = () => {
       if (document.visibilityState === 'visible' && currentUserRef.current) {
-        supabase.auth.getSession().then(({ data: { session: s } }) => {
-          if (!isMountedRef.current || isSigningInRef.current || isSigningOutRef.current) return;
-          if (s?.user?.id === currentUserRef.current?.id) {
-            applySession(s, true);
-          }
-        }).catch(() => {});
+        requestProfileCheck();
       }
     };
 
@@ -355,7 +445,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleWindowFocus);
     };
-  }, [applySession]);
+  }, [applySession, requestProfileCheck]);
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {

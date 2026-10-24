@@ -1,26 +1,49 @@
 import { useEffect, useRef } from 'react';
 import { Archive, AlertTriangle, X } from 'lucide-react';
 import type { Product } from '../../../types';
-import { restoreFocusWithFallback } from '../../../utils/focusUtils';
+import { restoreFocusWithFallback, getFocusableElements } from '../../../utils/focusUtils';
 import styles from './ArchiveProductModal.module.scss';
 
 export interface ArchiveProductModalProps {
   isOpen: boolean;
   product: Product | null;
+  isSubmitting?: boolean;
+  error?: string | null;
   onClose: () => void;
-  onConfirm: (product: Product) => void;
+  onConfirm: (product: Product) => Promise<void> | void;
 }
 
 export const ArchiveProductModal = ({
   isOpen,
   product,
+  isSubmitting = false,
+  error = null,
   onClose,
   onConfirm,
 }: ArchiveProductModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const isSubmittingRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
 
   useEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+
+  // When an error appears after submission, restore focus inside the modal to the cancel button
+  useEffect(() => {
+    if (error && !isSubmitting) {
+      requestAnimationFrame(() => {
+        const cancelBtn = modalRef.current?.querySelector<HTMLButtonElement>(
+          `.${styles.cancelBtn}`
+        );
+        cancelBtn?.focus();
+      });
+    }
+  }, [error, isSubmitting]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
     if (!isOpen) return;
 
     if (document.activeElement instanceof HTMLElement) {
@@ -37,18 +60,36 @@ export const ArchiveProductModal = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (!isSubmittingRef.current) {
+          onClose();
+        }
         return;
       }
 
       if (e.key === 'Tab' && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
+        const focusable = getFocusableElements(modalRef.current);
+        if (focusable.length === 0) {
+          e.preventDefault();
+          modalRef.current.focus();
+          return;
+        }
 
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
+
+        // If focus is currently on the modal card itself or outside
+        if (
+          document.activeElement === modalRef.current ||
+          !modalRef.current.contains(document.activeElement)
+        ) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            last.focus();
+          } else {
+            first.focus();
+          }
+          return;
+        }
 
         if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
@@ -63,6 +104,7 @@ export const ArchiveProductModal = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      isMountedRef.current = false;
       document.body.classList.remove('drawer-open');
       window.removeEventListener('keydown', handleKeyDown);
 
@@ -76,10 +118,16 @@ export const ArchiveProductModal = ({
   const hasRemainingStock = product.stock > 0;
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div
+      className={styles.modalOverlay}
+      onClick={() => {
+        if (!isSubmitting) onClose();
+      }}
+    >
       <div
         className={styles.modalCard}
         ref={modalRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -120,12 +168,20 @@ export const ArchiveProductModal = ({
                 <strong className={styles.productName}>«{product.name}»</strong> ({product.sku})? Позиция будет скрыта из основного списка склада, но история операций и движения сохранятся.
               </p>
             )}
+
+            {error && (
+              <div role="alert" className={styles.stockAlertBox} style={{ borderColor: '#ef4444', color: '#dc2626' }}>
+                <strong>Ошибка архивации</strong>
+                <span>{error}</span>
+              </div>
+            )}
           </div>
 
           <button
             type="button"
             className={styles.closeBtn}
             onClick={onClose}
+            disabled={isSubmitting}
             aria-label="Закрыть окно"
           >
             <X size={18} />
@@ -137,6 +193,7 @@ export const ArchiveProductModal = ({
             type="button"
             className={styles.cancelBtn}
             onClick={onClose}
+            disabled={isSubmitting}
           >
             {hasRemainingStock ? 'Понятно, закрыть' : 'Отмена'}
           </button>
@@ -144,12 +201,12 @@ export const ArchiveProductModal = ({
             <button
               type="button"
               className={styles.archiveBtn}
-              onClick={() => {
-                onConfirm(product);
-                onClose();
+              disabled={isSubmitting}
+              onClick={async () => {
+                await onConfirm(product);
               }}
             >
-              Архивировать товар
+              {isSubmitting ? 'Архивация...' : 'Архивировать товар'}
             </button>
           )}
         </div>

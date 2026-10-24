@@ -23,30 +23,12 @@ import {
 } from './dateUtils';
 import { toCents, fromCents } from './incomeCalculations';
 import { getSaleUnitsCount, getSaleTotalDiscount } from './salesHistoryUtils';
-import { getStockStatusLabel } from './productUtils';
+import {
+  getStockStatusLabel,
+  getCategoryLabel,
+  PRODUCT_CATEGORY_KEYS,
+} from './productUtils';
 import { buildCSVContent, downloadCSVFile } from './csvUtils';
-
-export const CATEGORY_LABELS: Record<ProductCategory, string> = {
-  cases: 'Чехлы',
-  cables: 'Кабели',
-  glass: 'Защитные стёкла',
-  powerbanks: 'Power Bank',
-  headphones: 'Наушники',
-  adapters: 'Адаптеры',
-  memory: 'Карты памяти',
-  holders: 'Автодержатели',
-};
-
-export const ALL_CATEGORIES: readonly ProductCategory[] = [
-  'cases',
-  'cables',
-  'glass',
-  'powerbanks',
-  'headphones',
-  'adapters',
-  'memory',
-  'holders',
-];
 
 /**
  * Calculates inclusive calendar days between two calendar date strings (YYYY-MM-DD).
@@ -211,7 +193,12 @@ export const calculateSalesReportSummary = (
     revenueCents += toCents(sale.totalAmount);
     unitsSold += getSaleUnitsCount(sale);
     totalDiscountCents += toCents(getSaleTotalDiscount(sale));
-    grossProfitCents += toCents(sale.profitAmount);
+    if (sale.profitAmount === null) {
+      // Receipt without cost data (cashier view): gross profit cannot be computed
+      hasIncompleteCostSnapshot = true;
+    } else {
+      grossProfitCents += toCents(sale.profitAmount);
+    }
 
     for (const item of sale.items) {
       if (
@@ -547,42 +534,42 @@ export const calculateCategoryStockReport = (
 ): CategoryStockReportItem[] => {
   const activeProducts = products.filter((p) => !p.isArchived);
 
-  const categoryMap: Record<
-    ProductCategory,
-    {
-      positionsCount: number;
-      totalUnits: number;
-      purchaseValueCents: number;
-      potentialRevenueCents: number;
-    }
-  > = {
-    cases: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    cables: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    glass: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    powerbanks: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    headphones: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    adapters: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    memory: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-    holders: { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
-  };
+  interface CategoryAccumulator {
+    positionsCount: number;
+    totalUnits: number;
+    purchaseValueCents: number;
+    potentialRevenueCents: number;
+  }
+
+  // One zeroed accumulator per predefined category, in central display order
+  const categoryMap = new Map<ProductCategory, CategoryAccumulator>(
+    PRODUCT_CATEGORY_KEYS.map((cat) => [
+      cat,
+      { positionsCount: 0, totalUnits: 0, purchaseValueCents: 0, potentialRevenueCents: 0 },
+    ])
+  );
 
   for (const p of activeProducts) {
-    if (categoryMap[p.category]) {
-      categoryMap[p.category].positionsCount += 1;
-      categoryMap[p.category].totalUnits += p.stock;
-      categoryMap[p.category].purchaseValueCents += toCents(p.purchasePrice) * p.stock;
-      categoryMap[p.category].potentialRevenueCents += toCents(p.sellingPrice) * p.stock;
+    const acc = categoryMap.get(p.category);
+    if (acc) {
+      acc.positionsCount += 1;
+      acc.totalUnits += p.stock;
+      acc.purchaseValueCents += toCents(p.purchasePrice) * p.stock;
+      acc.potentialRevenueCents += toCents(p.sellingPrice) * p.stock;
     }
   }
 
-  return ALL_CATEGORIES.map((cat) => ({
-    category: cat,
-    categoryLabel: CATEGORY_LABELS[cat] || cat,
-    positionsCount: categoryMap[cat].positionsCount,
-    totalUnits: categoryMap[cat].totalUnits,
-    purchaseValue: fromCents(categoryMap[cat].purchaseValueCents),
-    potentialRevenue: fromCents(categoryMap[cat].potentialRevenueCents),
-  }));
+  return PRODUCT_CATEGORY_KEYS.map((cat) => {
+    const acc = categoryMap.get(cat);
+    return {
+      category: cat,
+      categoryLabel: getCategoryLabel(cat),
+      positionsCount: acc?.positionsCount ?? 0,
+      totalUnits: acc?.totalUnits ?? 0,
+      purchaseValue: fromCents(acc?.purchaseValueCents ?? 0),
+      potentialRevenue: fromCents(acc?.potentialRevenueCents ?? 0),
+    };
+  });
 };
 
 /**

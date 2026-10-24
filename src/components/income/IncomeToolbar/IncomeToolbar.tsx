@@ -8,6 +8,9 @@ export interface IncomeToolbarProps {
   onFilterChange: (filters: IncomeFilters) => void;
   onResetFilters: () => void;
   onOpenCreateModal: () => void;
+  canCreate?: boolean;
+  isCreateDisabled?: boolean;
+  createDisabledTooltip?: string;
 }
 
 export const IncomeToolbar = ({
@@ -15,6 +18,9 @@ export const IncomeToolbar = ({
   onFilterChange,
   onResetFilters,
   onOpenCreateModal,
+  canCreate = true,
+  isCreateDisabled = false,
+  createDisabledTooltip,
 }: IncomeToolbarProps) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,18 +110,21 @@ export const IncomeToolbar = ({
         )}
       </div>
 
-      <div className={styles.rightControls}>
-        <button
-          type="button"
-          data-add-income-btn
-          className={styles.primaryButton}
-          onClick={onOpenCreateModal}
-          title="Оформить новое поступление товара"
-        >
-          <Plus size={16} />
-          <span>Новый приход</span>
-        </button>
-      </div>
+      {canCreate && (
+        <div className={styles.rightControls}>
+          <button
+            type="button"
+            data-add-income-btn
+            className={styles.primaryButton}
+            onClick={onOpenCreateModal}
+            disabled={isCreateDisabled}
+            title={createDisabledTooltip ?? 'Оформить новое поступление товара'}
+          >
+            <Plus size={16} />
+            <span>Новый приход</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

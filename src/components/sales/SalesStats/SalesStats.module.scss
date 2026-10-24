@@ -16,6 +16,13 @@
   }
 }
 
+// Cashier: no «Прибыль сегодня» card — three cards fill the desktop row
+.statsGrid.statsGridThree {
+  @media (min-width: 1101px) {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .statCard {
   background-color: $color-surface;
   border: 1px solid $color-border;

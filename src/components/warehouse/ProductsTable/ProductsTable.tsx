@@ -6,12 +6,13 @@ import {
   ArrowDown,
   MoreHorizontal,
   Edit2,
+  SlidersHorizontal,
   History,
   Archive,
   PackageOpen,
 } from 'lucide-react';
 import type {
-  Product,
+  WarehouseCatalogProduct,
   ProductSortField,
   ProductSortConfig,
 } from '../../../types';
@@ -22,15 +23,20 @@ import { getStockStatusLabel } from '../../../utils/productUtils';
 import { isElementVisible } from '../../../utils/focusUtils';
 import styles from './ProductsTable.module.scss';
 
+type Product = WarehouseCatalogProduct;
+
 export interface ProductsTableProps {
   products: Product[];
   sortConfig: ProductSortConfig;
   onSort: (field: ProductSortField) => void;
   onEditProduct: (product: Product) => void;
+  onAdjustStock?: (product: Product) => void;
   onViewMovements: (product: Product) => void;
   onArchiveProduct: (product: Product) => void;
   onResetFilters: () => void;
   canManageProducts?: boolean;
+  /** Purchase price column (admin only); without it the column is not rendered at all. */
+  showPurchasePrice?: boolean;
 }
 
 interface MenuCoords {
@@ -43,10 +49,12 @@ export const ProductsTable = ({
   sortConfig,
   onSort,
   onEditProduct,
+  onAdjustStock,
   onViewMovements,
   onArchiveProduct,
   onResetFilters,
   canManageProducts = true,
+  showPurchasePrice = false,
 }: ProductsTableProps) => {
   const [activeMenuProduct, setActiveMenuProduct] = useState<Product | null>(null);
   const [menuCoords, setMenuCoords] = useState<MenuCoords | null>(null);
@@ -187,7 +195,7 @@ export const ProductsTable = ({
 
     const rect = trigger.getBoundingClientRect();
     const menuWidth = 196;
-    const menuHeight = canManageProducts ? 126 : 46;
+    const menuHeight = canManageProducts ? 166 : 46;
 
     // Determine vertical placement: open upwards if space below is limited
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -288,17 +296,19 @@ export const ProductsTable = ({
               </th>
               <th scope="col">Артикул / Штрихкод</th>
               <th scope="col">Категория</th>
-              <th scope="col">
-                <button
-                  type="button"
-                  className={styles.sortableHeaderBtn}
-                  onClick={() => onSort('purchasePrice')}
-                  aria-label="Сортировать по цене закупки"
-                >
-                  <span>Закупка</span>
-                  {renderSortIndicator('purchasePrice')}
-                </button>
-              </th>
+              {showPurchasePrice && (
+                <th scope="col">
+                  <button
+                    type="button"
+                    className={styles.sortableHeaderBtn}
+                    onClick={() => onSort('purchasePrice')}
+                    aria-label="Сортировать по цене закупки"
+                  >
+                    <span>Закупка</span>
+                    {renderSortIndicator('purchasePrice')}
+                  </button>
+                </th>
+              )}
               <th scope="col">
                 <button
                   type="button"
@@ -359,15 +369,17 @@ export const ProductsTable = ({
 
                 {/* Category */}
                 <td className={styles.categoryCell}>
-                  <span className={`${styles.categoryBadge} ${styles[`cat-${product.category}`] || ''}`}>
+                  <span className={`${styles.categoryBadge} ${styles[`cat-${product.category}`] || styles['cat-other']}`}>
                     {product.categoryLabel}
                   </span>
                 </td>
 
-                {/* Purchase Price */}
-                <td className={styles.purchaseCell}>
-                  {formatCurrency(product.purchasePrice)}
-                </td>
+                {/* Purchase Price (admin only) */}
+                {showPurchasePrice && (
+                  <td className={styles.purchaseCell}>
+                    {product.purchasePrice === null ? '—' : formatCurrency(product.purchasePrice)}
+                  </td>
+                )}
 
                 {/* Selling Price */}
                 <td className={styles.sellingCell}>
@@ -431,19 +443,36 @@ export const ProductsTable = ({
             onKeyDown={handleMenuKeyDown}
           >
             {canManageProducts && (
-              <button
-                type="button"
-                className={styles.menuItem}
-                role="menuitem"
-                onClick={() => {
-                  const prod = activeMenuProduct;
-                  closeMenu(true);
-                  onEditProduct(prod);
-                }}
-              >
-                <Edit2 size={14} className={styles.menuIcon} />
-                <span>Редактировать</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  onClick={() => {
+                    const prod = activeMenuProduct;
+                    closeMenu(true);
+                    onEditProduct(prod);
+                  }}
+                >
+                  <Edit2 size={14} className={styles.menuIcon} />
+                  <span>Редактировать</span>
+                </button>
+                {onAdjustStock && (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    role="menuitem"
+                    onClick={() => {
+                      const prod = activeMenuProduct;
+                      closeMenu(true);
+                      onAdjustStock(prod);
+                    }}
+                  >
+                    <SlidersHorizontal size={14} className={styles.menuIcon} />
+                    <span>Корректировать остаток</span>
+                  </button>
+                )}
+              </>
             )}
             <button
               type="button"

@@ -1,34 +1,67 @@
-import { useState, useMemo, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { Plus, AlertCircle, RotateCcw } from 'lucide-react';
 import type {
   Product,
   ProductFilters,
   ProductSortConfig,
   ProductSortField,
   ProductFormData,
+  WarehouseCatalogProduct,
 } from '../../types';
 import { exportProductsToCSV } from '../../utils/csvUtils';
-import { useInventory, useAuth } from '../../context';
+import {
+  catalogItemFromProduct,
+  computeWarehouseStats,
+  filterCatalogProducts,
+  getEffectiveSortConfig,
+  sortCatalogProducts,
+  toAdminProduct,
+} from '../../utils/warehouseCatalogUtils';
+import { useAuth } from '../../context';
+import { warehouseApi } from '../../api/warehouse';
 import { WarehouseStats } from '../../components/warehouse/WarehouseStats/WarehouseStats';
 import { WarehouseToolbar } from '../../components/warehouse/WarehouseToolbar/WarehouseToolbar';
 import { ProductsTable } from '../../components/warehouse/ProductsTable/ProductsTable';
 import { Pagination } from '../../components/warehouse/Pagination/Pagination';
 import { ProductFormModal } from '../../components/warehouse/ProductFormModal/ProductFormModal';
+import { AdjustStockModal } from '../../components/warehouse/AdjustStockModal/AdjustStockModal';
 import { ArchiveProductModal } from '../../components/warehouse/ArchiveProductModal/ArchiveProductModal';
 import { ProductMovementsModal } from '../../components/warehouse/ProductMovementsModal/ProductMovementsModal';
+import { useWarehouseCatalog } from './hooks/useWarehouseCatalog';
+import { useProductMovements } from './hooks/useProductMovements';
 import styles from './WarehousePage.module.scss';
 
-export const WarehousePage = () => {
-  const { isAdmin } = useAuth();
-  const {
-    products,
-    activeProducts,
-    addProduct,
-    updateProduct,
-    archiveProduct,
-    getProductMovements,
-  } = useInventory();
+const EMPTY_CATALOG: WarehouseCatalogProduct[] = [];
 
+/**
+ * Warehouse page on the role-aware RPCs rpc_list_products / rpc_list_product_movements:
+ * - admin: full catalog (purchase price, warehouse value, notes and responsible persons);
+ * - cashier: the server returns no purchase price / note / responsible data, so the purchase
+ *   column, the «Стоимость склада» card and those movement lines are not rendered at all.
+ * Mutations (create, update, adjust stock, archive) stay admin-only and go through the
+ * transactional RPCs. NOTE: hiding UI is not a protection — the server role decides the data.
+ */
+export const WarehousePage = () => {
+  const { user, isAdmin } = useAuth();
+  const userId = user?.id ?? null;
+
+  const catalogState = useWarehouseCatalog({ userId, isAdmin });
+  const { refresh: refreshCatalog, applyProduct } = catalogState;
+  const catalog = catalogState.catalog;
+  const serverProducts = catalog?.products ?? EMPTY_CATALOG;
+  const isLoadingProducts = catalogState.isLoading;
+  const loadError = catalogState.error;
+
+  // Admin features need BOTH the client role and an admin catalog returned by the server
+  const hasAdminCatalog = isAdmin && catalog?.role === 'admin';
+  const showPurchasePrice = hasAdminCatalog;
+  const canManage = isAdmin && (catalog === null || catalog.role === 'admin');
+
+  const movementsResetKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+  const movements = useProductMovements(movementsResetKey);
+  const { reloadIfOpen: reloadMovementsIfOpen } = movements;
+
+  // Filters, sorting, pagination
   const [filters, setFilters] = useState<ProductFilters>({
     searchQuery: '',
     category: 'all',
@@ -38,96 +71,70 @@ export const WarehousePage = () => {
     field: 'name',
     direction: 'asc',
   });
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 6; // matching mockup ("Показано 1–6 из ...")
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 6;
 
   // Modal states
-  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
+  const [isFormSubmitting, setIsFormSubmitting] = useState<boolean>(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
-  const [productToArchive, setProductToArchive] = useState<Product | null>(null);
-  const [productForMovements, setProductForMovements] = useState<Product | null>(null);
 
-  // Reset admin-only modal states immediately when isAdmin permission is lost
-  const [prevIsAdmin, setPrevIsAdmin] = useState(isAdmin);
-  if (prevIsAdmin !== isAdmin) {
-    setPrevIsAdmin(isAdmin);
-    if (!isAdmin) {
-      if (isFormModalOpen) {
-        setIsFormModalOpen(false);
-        setProductToEdit(null);
-      }
-      if (productToArchive) {
-        setProductToArchive(null);
-      }
-    }
+  const [productToAdjust, setProductToAdjust] = useState<Product | null>(null);
+
+  const [productToArchive, setProductToArchive] = useState<Product | null>(null);
+  const [isArchiveSubmitting, setIsArchiveSubmitting] = useState<boolean>(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+
+  const isMountedRef = useRef<boolean>(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Close admin modals when the user changes, logs out or loses the admin role
+  const [prevAccessKey, setPrevAccessKey] = useState(movementsResetKey);
+  if (prevAccessKey !== movementsResetKey) {
+    setPrevAccessKey(movementsResetKey);
+    setIsFormModalOpen(false);
+    setProductToEdit(null);
+    setProductToAdjust(null);
+    setProductToArchive(null);
+    setArchiveError(null);
   }
 
-  const effectiveFormModalOpen = isAdmin && isFormModalOpen;
-  const effectiveProductToArchive = isAdmin ? productToArchive : null;
+  const effectiveFormModalOpen = hasAdminCatalog && isFormModalOpen;
+  const effectiveProductToAdjust = hasAdminCatalog ? productToAdjust : null;
+  const effectiveProductToArchive = hasAdminCatalog ? productToArchive : null;
 
-  // Stats calculation
-  const stats = useMemo(() => {
-    const totalCount = activeProducts.length;
-    const totalCost = activeProducts.reduce(
-      (sum, p) => sum + p.purchasePrice * p.stock,
-      0
-    );
-    const lowStockCount = activeProducts.filter((p) => p.status === 'low_stock').length;
-    const outOfStockCount = activeProducts.filter((p) => p.status === 'out_of_stock').length;
+  // Admin-only full products for the form's SKU / barcode duplicate checks
+  const adminProducts = useMemo(
+    () =>
+      hasAdminCatalog
+        ? serverProducts.map(toAdminProduct).filter((p): p is Product => p !== null)
+        : [],
+    [hasAdminCatalog, serverProducts]
+  );
 
-    return {
-      totalCount,
-      totalCost,
-      lowStockCount,
-      outOfStockCount,
-    };
-  }, [activeProducts]);
+  const stats = useMemo(
+    () => computeWarehouseStats(serverProducts, showPurchasePrice),
+    [serverProducts, showPurchasePrice]
+  );
 
-  // Filtering (only active products displayed in the main table)
-  const filteredProducts = useMemo(() => {
-    return activeProducts.filter((item) => {
-      // Search
-      if (filters.searchQuery.trim()) {
-        const q = filters.searchQuery.trim().toLowerCase();
-        const matchName = item.name.toLowerCase().includes(q);
-        const matchSku = item.sku.toLowerCase().includes(q);
-        const matchBarcode = item.barcode.toLowerCase().includes(q);
-        if (!matchName && !matchSku && !matchBarcode) {
-          return false;
-        }
-      }
+  const filteredProducts = useMemo(
+    () => filterCatalogProducts(serverProducts, filters),
+    [serverProducts, filters]
+  );
 
-      // Category
-      if (filters.category !== 'all' && item.category !== filters.category) {
-        return false;
-      }
-
-      // Status
-      if (filters.status !== 'all' && item.status !== filters.status) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [activeProducts, filters]);
-
-  // Sorting
-  const sortedProducts = useMemo(() => {
-    const list = [...filteredProducts];
-    const { field, direction } = sortConfig;
-
-    list.sort((a, b) => {
-      let comparison = 0;
-      if (field === 'name') {
-        comparison = a.name.localeCompare(b.name, 'ru');
-      } else {
-        comparison = a[field] - b[field];
-      }
-      return direction === 'asc' ? comparison : -comparison;
-    });
-
-    return list;
-  }, [filteredProducts, sortConfig]);
+  const effectiveSortConfig = useMemo(
+    () => getEffectiveSortConfig(sortConfig, showPurchasePrice),
+    [sortConfig, showPurchasePrice]
+  );
+  const sortedProducts = useMemo(
+    () => sortCatalogProducts(filteredProducts, effectiveSortConfig),
+    [filteredProducts, effectiveSortConfig]
+  );
 
   // Pagination
   const totalPages = Math.ceil(sortedProducts.length / pageSize) || 1;
@@ -138,8 +145,14 @@ export const WarehousePage = () => {
     return sortedProducts.slice(startIndex, startIndex + pageSize);
   }, [sortedProducts, safeCurrentPage, pageSize]);
 
+  // Movements modal shows the current catalog data of its product (e.g. after an adjustment)
+  const movementsProduct = movements.product
+    ? serverProducts.find((p) => p.id === movements.product?.id) ?? movements.product
+    : null;
+
   // Handlers
   const handleSort = (field: ProductSortField) => {
+    if (field === 'purchasePrice' && !showPurchasePrice) return;
     setSortConfig((prev) => ({
       field,
       direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc',
@@ -156,26 +169,157 @@ export const WarehousePage = () => {
   };
 
   const handleOpenAddModal = () => {
-    if (!isAdmin) return;
+    if (!hasAdminCatalog) return;
     setProductToEdit(null);
     setIsFormModalOpen(true);
   };
 
-  const handleOpenEditModal = (product: Product) => {
-    if (!isAdmin) return;
+  const handleOpenEditModal = (item: WarehouseCatalogProduct) => {
+    const product = hasAdminCatalog ? toAdminProduct(item) : null;
+    if (!product) return;
     setProductToEdit(product);
     setIsFormModalOpen(true);
   };
 
-  const handleFormSubmit = (data: ProductFormData) => {
-    if (!isAdmin) {
+  const handleOpenAdjustStockModal = (item: WarehouseCatalogProduct) => {
+    const product = hasAdminCatalog ? toAdminProduct(item) : null;
+    if (!product) return;
+    setProductToAdjust(product);
+  };
+
+  const handleOpenArchiveModal = (item: WarehouseCatalogProduct) => {
+    const product = hasAdminCatalog ? toAdminProduct(item) : null;
+    if (!product) return;
+    setArchiveError(null);
+    setProductToArchive(product);
+  };
+
+  // Mutating handlers via Supabase RPC
+  const handleFormSubmit = async (
+    data: ProductFormData
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    field?: 'stock' | 'purchasePrice' | 'sellingPrice' | 'sku' | 'barcode' | 'name' | 'reason';
+  }> => {
+    if (!hasAdminCatalog) {
       return { success: false, error: 'Недостаточно прав для выполнения операции' };
     }
-    if (productToEdit) {
-      return updateProduct(productToEdit.id, data);
-    } else {
-      addProduct(data);
+
+    setIsFormSubmitting(true);
+    try {
+      if (productToEdit) {
+        const res = await warehouseApi.updateProduct(productToEdit.id, {
+          name: data.name,
+          sku: data.sku,
+          barcode: data.barcode,
+          category: data.category,
+          description: data.description,
+          purchasePrice: data.purchasePrice,
+          sellingPrice: data.sellingPrice,
+          minStockThreshold: data.minStockThreshold,
+        });
+
+        if (!res.success) {
+          return { success: false, error: res.error.message, field: res.error.field };
+        }
+
+        // Apply updated product immediately to avoid stale catalog
+        applyProduct(catalogItemFromProduct(res.data), 'upsert');
+      } else {
+        const res = await warehouseApi.createProduct({
+          name: data.name,
+          sku: data.sku,
+          barcode: data.barcode,
+          category: data.category,
+          description: data.description,
+          purchasePrice: data.purchasePrice,
+          sellingPrice: data.sellingPrice,
+          stock: data.stock,
+          minStockThreshold: data.minStockThreshold,
+        });
+
+        if (!res.success) {
+          return { success: false, error: res.error.message, field: res.error.field };
+        }
+
+        // Apply new product immediately to list
+        applyProduct(catalogItemFromProduct(res.data), 'upsert');
+      }
+
+      // Background refetch to guarantee absolute consistency with database
+      refreshCatalog();
       return { success: true };
+    } finally {
+      if (isMountedRef.current) {
+        setIsFormSubmitting(false);
+      }
+    }
+  };
+
+  const handleAdjustStockSubmit = async (params: {
+    productId: string;
+    newStock: number;
+    reason: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!hasAdminCatalog) {
+      return { success: false, error: 'Недостаточно прав для выполнения операции' };
+    }
+
+    const res = await warehouseApi.adjustStock(params);
+    if (!res.success) {
+      return { success: false, error: res.error.message };
+    }
+
+    // Apply adjusted product immediately to catalog
+    const adjusted = catalogItemFromProduct(res.data);
+    applyProduct(adjusted, 'upsert');
+
+    // Refresh products catalog in background
+    refreshCatalog();
+
+    // If movements modal happens to be open for this product, refresh movements too
+    reloadMovementsIfOpen(adjusted);
+
+    return { success: true };
+  };
+
+  const handleArchiveConfirm = async (product: Product) => {
+    if (!hasAdminCatalog) return;
+    setIsArchiveSubmitting(true);
+    setArchiveError(null);
+
+    try {
+      const res = await warehouseApi.archiveProduct(product.id, true);
+      if (!isMountedRef.current) return;
+
+      if (!res.success) {
+        setProductToArchive((current) => {
+          if (current?.id === product.id) {
+            setArchiveError(res.error.message);
+          }
+          return current;
+        });
+        return;
+      }
+
+      // Immediately remove archived product from active catalog view
+      applyProduct(catalogItemFromProduct(res.data), 'remove');
+      setProductToArchive((current) => (current?.id === product.id ? null : current));
+      refreshCatalog();
+    } catch {
+      if (isMountedRef.current) {
+        setProductToArchive((current) => {
+          if (current?.id === product.id) {
+            setArchiveError('Произошла ошибка при архивации товара.');
+          }
+          return current;
+        });
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsArchiveSubmitting(false);
+      }
     }
   };
 
@@ -184,21 +328,19 @@ export const WarehousePage = () => {
     setProductToEdit(null);
   }, []);
 
+  const handleCloseAdjustStockModal = useCallback(() => {
+    setProductToAdjust(null);
+  }, []);
+
   const handleCloseArchiveModal = useCallback(() => {
     setProductToArchive(null);
+    setArchiveError(null);
   }, []);
 
-  const handleCloseMovementsModal = useCallback(() => {
-    setProductForMovements(null);
-  }, []);
-
-  const handleArchiveConfirm = (product: Product) => {
-    if (!isAdmin) return;
-    archiveProduct(product.id);
-  };
-
+  // CSV contains only the columns the current role sees (no purchase price for a cashier)
   const handleExportCSV = () => {
-    exportProductsToCSV(sortedProducts, 'smart-store-sklad.csv');
+    if (!catalog) return;
+    exportProductsToCSV(sortedProducts, showPurchasePrice, 'smart-store-sklad.csv');
   };
 
   return (
@@ -207,15 +349,16 @@ export const WarehousePage = () => {
       <header className={styles.pageHeader}>
         <div className={styles.headerTitles}>
           <h1 className={styles.title}>Склад</h1>
-          <p className={styles.subtitle}>Управление товарами и остатками</p>
+          <p className={styles.subtitle}>Управление товарами и остатками (Supabase)</p>
         </div>
 
-        {isAdmin && (
+        {canManage && (
           <button
             type="button"
             data-add-product-btn
             className={styles.addBtnHeader}
             onClick={handleOpenAddModal}
+            disabled={!hasAdminCatalog}
           >
             <Plus size={16} />
             <span>Добавить товар</span>
@@ -223,13 +366,35 @@ export const WarehousePage = () => {
         )}
       </header>
 
-      {/* 4 Stat Cards */}
-      <WarehouseStats
-        totalCount={stats.totalCount}
-        totalCost={stats.totalCost}
-        lowStockCount={stats.lowStockCount}
-        outOfStockCount={stats.outOfStockCount}
-      />
+      {/* Network / Query Error Banner */}
+      {loadError && (
+        <div className={styles.errorBanner} role="alert">
+          <div className={styles.errorInfo}>
+            <AlertCircle size={20} />
+            <span className={styles.errorText}>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            data-retry-warehouse-catalog-btn
+            className={styles.retryBtn}
+            onClick={catalogState.retry}
+            disabled={isLoadingProducts}
+          >
+            <RotateCcw size={14} />
+            <span>{isLoadingProducts ? 'Загрузка...' : 'Повторить'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Stat Cards (no warehouse value for a cashier) */}
+      {catalog && (
+        <WarehouseStats
+          totalCount={stats.totalCount}
+          totalCost={stats.totalCost}
+          lowStockCount={stats.lowStockCount}
+          outOfStockCount={stats.outOfStockCount}
+        />
+      )}
 
       {/* Toolbar / Filters */}
       <WarehouseToolbar
@@ -241,29 +406,40 @@ export const WarehousePage = () => {
         onResetFilters={handleResetFilters}
         onExport={handleExportCSV}
         onAddProduct={handleOpenAddModal}
-        canAddProduct={isAdmin}
+        canAddProduct={hasAdminCatalog}
       />
 
-      {/* Products Table */}
-      <ProductsTable
-        products={paginatedProducts}
-        sortConfig={sortConfig}
-        onSort={handleSort}
-        onEditProduct={handleOpenEditModal}
-        onViewMovements={(prod) => setProductForMovements(prod)}
-        onArchiveProduct={(prod) => setProductToArchive(prod)}
-        onResetFilters={handleResetFilters}
-        canManageProducts={isAdmin}
-      />
+      {/* Products Table or Compact Loading State; nothing partial on failure */}
+      {isLoadingProducts && !catalog ? (
+        <div className={styles.tableLoadingCard} role="status" aria-live="polite">
+          <div className={styles.spinner} aria-hidden="true" />
+          <span className={styles.loadingText}>Загрузка каталога товаров из Supabase...</span>
+        </div>
+      ) : catalog ? (
+        <ProductsTable
+          products={paginatedProducts}
+          sortConfig={effectiveSortConfig}
+          onSort={handleSort}
+          onEditProduct={handleOpenEditModal}
+          onAdjustStock={handleOpenAdjustStockModal}
+          onViewMovements={movements.open}
+          onArchiveProduct={handleOpenArchiveModal}
+          onResetFilters={handleResetFilters}
+          canManageProducts={hasAdminCatalog}
+          showPurchasePrice={showPurchasePrice}
+        />
+      ) : null}
 
       {/* Pagination */}
-      <Pagination
-        currentPage={safeCurrentPage}
-        totalPages={totalPages}
-        totalItems={sortedProducts.length}
-        pageSize={pageSize}
-        onPageChange={(page) => setCurrentPage(page)}
-      />
+      {catalog && (
+        <Pagination
+          currentPage={safeCurrentPage}
+          totalPages={totalPages}
+          totalItems={sortedProducts.length}
+          pageSize={pageSize}
+          onPageChange={(page) => setCurrentPage(page)}
+        />
+      )}
 
       {/* Add / Edit Product Modal */}
       {effectiveFormModalOpen && (
@@ -271,9 +447,21 @@ export const WarehousePage = () => {
           key={productToEdit?.id ?? 'new-product'}
           isOpen={effectiveFormModalOpen}
           productToEdit={productToEdit}
-          existingProducts={products}
+          existingProducts={adminProducts}
+          isSubmitting={isFormSubmitting}
           onClose={handleCloseFormModal}
           onSubmit={handleFormSubmit}
+        />
+      )}
+
+      {/* Adjust Stock Modal */}
+      {effectiveProductToAdjust && (
+        <AdjustStockModal
+          key={effectiveProductToAdjust.id}
+          isOpen={Boolean(effectiveProductToAdjust)}
+          product={effectiveProductToAdjust}
+          onClose={handleCloseAdjustStockModal}
+          onSubmit={handleAdjustStockSubmit}
         />
       )}
 
@@ -281,16 +469,21 @@ export const WarehousePage = () => {
       <ArchiveProductModal
         isOpen={Boolean(effectiveProductToArchive)}
         product={effectiveProductToArchive}
+        isSubmitting={isArchiveSubmitting}
+        error={archiveError}
         onClose={handleCloseArchiveModal}
         onConfirm={handleArchiveConfirm}
       />
 
       {/* Product Movements History Modal */}
       <ProductMovementsModal
-        isOpen={Boolean(productForMovements)}
-        product={productForMovements}
-        movements={productForMovements ? getProductMovements(productForMovements.id) : []}
-        onClose={handleCloseMovementsModal}
+        isOpen={Boolean(movementsProduct)}
+        product={movementsProduct}
+        movements={movements.movements}
+        isLoading={movements.isLoading}
+        error={movements.error}
+        onRetry={movements.retry}
+        onClose={movements.close}
       />
     </div>
   );

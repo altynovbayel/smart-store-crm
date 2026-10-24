@@ -19,7 +19,7 @@
    - Складские движения (`stock_movements`) являются неизменяемыми записями аудита (тип, дельта количества, временная метка, автор и документ-основание неизменны). Поле `balance_after` хранит вычисленный накопительный остаток на соответствующий момент времени; при проведении документов задним числом `balance_after` последующих движений автоматически пересчитывается для сохранения хронологической целостности складского баланса.
    - Таблица `product_price_history` автоматически фиксирует историю изменения цен (при создании, редактировании и приходе товара), гарантируя точное определение себестоимости даже для документов, оформляемых задним числом.
 5. **Защита от прямых мутаций (RPC-only Mutex):**
-   - На уровне прав и RLS пользователям роли `authenticated` предоставлен только доступ `SELECT`.
+   - Прямой доступ клиентских ролей к бизнес-таблицам закрыт полностью, включая `SELECT`: чтение данных выполняется только через ролевые RPC-функции (`SECURITY DEFINER`, см. раздел 6.3). Единственное исключение — `SELECT` колонок `id`, `role`, `is_active` своей строки `public.profiles` (раздел 4).
    - Прямые `INSERT`, `UPDATE`, `DELETE` для бизнес-таблиц закрыты как на уровне `GRANT/REVOKE`, так и на уровне RLS-политик.
    - Все мутации выполняются исключительно через транзакционные RPC-функции (`SECURITY DEFINER`), гарантирующие атомарное обновление складских остатков и создание движений.
 
@@ -49,7 +49,9 @@
 - `created_at` (timestamptz, default `now()`)
 - `updated_at` (timestamptz, default `now()`)
 
-> **Supabase Realtime:** Таблица `public.profiles` включена в публикацию `supabase_realtime` (`enable_profiles_realtime`). Это позволяет фронтенд-провайдеру авторизации (`AuthProvider`) мгновенно и без поллинга реагировать на изменение прав сотрудника: оперативное переключение роли (`admin` ↔ `cashier`) или блокировку аккаунта (`is_active = false`) с немедленным завершением сессии.
+> **Доступ клиента:** роль `authenticated` может читать только колонки `id`, `role`, `is_active` и только своей строки (политика `profiles_select_own`, `id = (select auth.uid())`; миграция `rbac_narrow_profiles_select`). `full_name`, `created_at`, `updated_at` и профили других сотрудников напрямую недоступны никому из клиентов, включая администратора. Профиль текущего пользователя (`id`, `full_name`, `role`, `is_active`) frontend получает через `public.rpc_get_my_profile()`.
+
+> **Supabase Realtime:** Таблица `public.profiles` включена в публикацию `supabase_realtime` (`enable_profiles_realtime`). `AuthProvider` подписан только на `UPDATE` своей строки (`filter: id=eq.<uid>`, `select: ['id', 'role', 'is_active']`) и при событии заново загружает профиль через `rpc_get_my_profile`: смена роли (`admin` ↔ `cashier`) применяется сразу, блокировка (`is_active = false`) завершает сессию. Содержимое события не используется. При ошибке подписки, а также раз в 60 секунд при видимой вкладке и при возврате на неё, выполняется запасная проверка профиля.
 
 ### 3.2. `public.products` (Каталог товаров)
 - `id` (uuid, PK, default `gen_random_uuid()`)
@@ -152,14 +154,14 @@
 ## 4. Безопасность и RLS
 
 1. **Функции схемы `private`:**
-   - **RLS Helper Functions:** `private.is_active_user()`, `private.is_admin()`, `private.current_user_role()` имеют `SET search_path = ''` и полностью квалифицированные имена; право `EXECUTE` предоставлено `authenticated` для вычисления политик RLS.
+   - **RLS Helper Functions:** `private.is_active_user()`, `private.is_admin()`, `private.current_user_role()` имеют `SET search_path = ''` и полностью квалифицированные имена; используются внутри RPC-функций. Право `EXECUTE` у `authenticated` сохранилось с тех пор, как они вычисляли RLS-политики; сейчас ни одна политика их не использует, схема `private` не опубликована в API.
    - **RPC Security Helper:** `private.get_active_profile()` имеет `SET search_path = pg_catalog, public, private, pg_temp`, используется внутри RPC-функций; прямой доступ к ней полностью отозван (`REVOKE ALL FROM PUBLIC, anon, authenticated`).
 2. **Анонимный доступ (`anon`):**
    - Полностью закрыт: `REVOKE ALL ON ALL TABLES/FUNCTIONS/SEQUENCES IN SCHEMA public FROM anon, public`.
 3. **Авторизованные сотрудники (`authenticated`):**
    - Явно отозваны все стандартные права записи: `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated`.
-   - Выдано право только на чтение (`SELECT`) при условии `is_active = true`.
-   - В `profiles` кассир видит только свой профиль (`id = (select auth.uid())`), администратор видит все профили.
+   - Прав на таблицы нет, в том числе `SELECT`: `income_receipts`, `income_items`, `outcome_documents`, `outcome_items`, `products`, `product_price_history`, `sales`, `sale_items`, `stock_movements` закрыты (`REVOKE ALL`, SELECT-политики удалены). Данные читаются только через RPC (раздел 6.3), которые сами проверяют активный профиль и роль и возвращают кассиру урезанный набор полей.
+   - `public.profiles`: `GRANT SELECT (id, role, is_active)` и единственная политика `profiles_select_own` (`id = (select auth.uid())`) — сотрудник, в том числе администратор, видит только эти три колонки своей строки. Политика не проверяет `is_active`, чтобы заблокированный сотрудник получил Realtime-событие о своей блокировке.
    - Прямые вызовы разрешены только для точно специфицированных публичных RPC-функций.
 4. **Регистрация пользователей:**
    - Открытая регистрация отключена в `config.toml` (`enable_signup = false`).
@@ -321,3 +323,21 @@ WHERE id = (
   7. Уменьшает остатки товаров в `public.products`.
   8. Создаёт движения `write_off` в `public.stock_movements` и сдвигает `balance_after` будущих движений.
 - **Возвращает:** `jsonb` объект `{ id, document_number, total_cost_minor, items_count }`.
+
+---
+
+### 6.3. Чтение данных (RPC)
+
+Прямого `SELECT` бизнес-таблиц у клиентских ролей нет; frontend читает данные только через эти функции. Все они `SECURITY DEFINER` с фиксированным `search_path`, `EXECUTE` выдан только `authenticated`. Первым действием каждая функция проверяет активный профиль и роль вызывающего; неактивный или отсутствующий профиль получает `42501`. Исключение — `rpc_get_my_profile`: она возвращает свою строку и при `is_active = false` (или `{ "profile": null }`), чтобы frontend показал сообщение о блокировке и завершил сессию.
+
+| RPC-функция | Назначение | Разрешённые роли |
+|---|---|---|
+| `public.rpc_get_my_profile` | Профиль текущего пользователя (`id`, `full_name`, `role`, `is_active`) или `null` | любой `authenticated` (только своя строка) |
+| `public.rpc_list_products` | Каталог товаров (постранично) | `admin` — все поля; `cashier` — без закупочной цены, описания и служебных дат |
+| `public.rpc_list_product_movements` | Складские движения товара | `admin`; `cashier` — без закупочных цен, автора, примечаний и служебных полей |
+| `public.rpc_list_sales`, `public.rpc_get_sale`, `public.rpc_has_any_sales` | История продаж и чек | `admin`; `cashier` — без себестоимости и прибыли |
+| `public.rpc_get_dashboard_sales_summary`, `public.rpc_get_dashboard_stock_summary` | Сводки Dashboard | `admin`, `cashier` |
+| `public.rpc_list_income_receipts`, `public.rpc_get_income_receipt` | Приходные накладные | `admin` |
+| `public.rpc_list_outcome_documents`, `public.rpc_get_outcome_document` | Акты списания | `admin` |
+| `public.rpc_get_purchase_prices_at` | Исторические закупочные цены | `admin` |
+| `public.rpc_get_sales_report`, `public.rpc_get_warehouse_report`, `public.rpc_get_warehouse_report_export` | Отчёты и экспорт | `admin` |

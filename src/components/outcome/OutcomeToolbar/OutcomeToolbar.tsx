@@ -13,6 +13,9 @@ export interface OutcomeToolbarProps {
   onFilterChange: (filters: OutcomeFilters) => void;
   onResetFilters: () => void;
   onOpenCreateModal: () => void;
+  canCreate?: boolean;
+  isCreateDisabled?: boolean;
+  createDisabledTooltip?: string;
 }
 
 export const OutcomeToolbar = ({
@@ -20,8 +23,12 @@ export const OutcomeToolbar = ({
   onFilterChange,
   onResetFilters,
   onOpenCreateModal,
+  canCreate = true,
+  isCreateDisabled = false,
+  createDisabledTooltip,
 }: OutcomeToolbarProps) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
+
 
   const hasActiveFilters =
     Boolean(filters.searchQuery.trim()) ||
@@ -135,18 +142,21 @@ export const OutcomeToolbar = ({
         )}
       </div>
 
-      <div className={styles.rightControls}>
-        <button
-          type="button"
-          data-add-outcome-btn
-          className={styles.primaryButton}
-          onClick={onOpenCreateModal}
-          title="Оформить новое списание товара"
-        >
-          <Plus size={16} />
-          <span>Новое списание</span>
-        </button>
-      </div>
+      {canCreate && (
+        <div className={styles.rightControls}>
+          <button
+            type="button"
+            data-add-outcome-btn
+            className={styles.primaryButton}
+            onClick={onOpenCreateModal}
+            disabled={isCreateDisabled}
+            title={createDisabledTooltip ?? 'Оформить новое списание товара'}
+          >
+            <Plus size={16} />
+            <span>Новое списание</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

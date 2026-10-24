@@ -1,7 +1,11 @@
 import type { User, Session } from '@supabase/supabase-js';
 import type { Database } from './database.types';
 
-export type UserProfile = Database['public']['Tables']['profiles']['Row'];
+/** Own profile as returned by rpc_get_my_profile (exactly these four fields). */
+export type UserProfile = Pick<
+  Database['public']['Tables']['profiles']['Row'],
+  'id' | 'full_name' | 'role' | 'is_active'
+>;
 export type AppRole = Database['public']['Enums']['app_role'];
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'inactive' | 'error';

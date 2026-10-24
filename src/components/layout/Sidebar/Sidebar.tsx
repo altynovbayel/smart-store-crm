@@ -30,7 +30,7 @@ const navItems: NavItem[] = [
   { to: '/outcome', label: 'Расход', icon: ArrowUpFromLine, roles: ['admin'] },
   { to: '/warehouse', label: 'Склад', icon: Package },
   { to: '/sales-history', label: 'История продаж', icon: Clock },
-  { to: '/reports', label: 'Отчёты', icon: BarChart3 },
+  { to: '/reports', label: 'Отчёты', icon: BarChart3, roles: ['admin'] },
 ];
 
 export interface SidebarProps {

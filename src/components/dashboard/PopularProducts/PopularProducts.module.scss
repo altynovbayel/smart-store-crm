@@ -111,3 +111,16 @@
   color: $color-text-secondary;
   line-height: 1.2;
 }
+
+.periodLabel {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-regular;
+  color: $color-text-secondary;
+}
+
+.emptyText {
+  padding: $spacing-lg 0;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  text-align: center;
+}

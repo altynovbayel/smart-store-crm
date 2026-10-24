@@ -17,16 +17,26 @@ export const isElementVisible = (element: HTMLElement): boolean => {
   );
 };
 
+const isElementInteractive = (el: HTMLElement): boolean => {
+  if (
+    'disabled' in el &&
+    (el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement).disabled
+  ) {
+    return false;
+  }
+  return isElementVisible(el);
+};
+
 /**
- * Finds the currently visible "Add product", "Add income", or "Add outcome" button on the page.
- * Avoids buttons hidden by responsive CSS (e.g. mobile breakpoints).
+ * Finds the currently visible and enabled "Add product", "Add income", or "Add outcome" button on the page.
+ * Avoids buttons hidden by responsive CSS (e.g. mobile breakpoints) or disabled during loading/errors.
  */
 export const getVisibleAddButton = (
   selector: string = '[data-add-product-btn], [data-add-income-btn], [data-add-outcome-btn], [data-add-sale-btn]'
 ): HTMLElement | null => {
   const candidates = Array.from(
     document.querySelectorAll<HTMLElement>(selector)
-  );
+  ).filter(isElementInteractive);
 
   const visible = candidates.find(isElementVisible);
 
@@ -51,8 +61,9 @@ export const getVisibleAddSaleButton = (): HTMLElement | null => {
 };
 
 /**
- * Restores focus to the previously active element if it's still attached to the DOM
- * and visible, otherwise falls back to the visible action button.
+ * Restores focus to the previously active element if it's still attached to the DOM,
+ * visible, and interactive (not disabled), otherwise falls back to the visible action button.
+ * If all action buttons are disabled or hidden, falls back to the first visible search input.
  */
 export const restoreFocusWithFallback = (
   previousElement: HTMLElement | null,
@@ -61,22 +72,40 @@ export const restoreFocusWithFallback = (
   if (
     previousElement &&
     document.contains(previousElement) &&
-    isElementVisible(previousElement)
+    isElementInteractive(previousElement)
   ) {
     previousElement.focus();
-    return;
+    if (document.activeElement === previousElement) {
+      return;
+    }
   }
 
   const fallbackBtn = getVisibleAddButton(fallbackSelector);
-  if (fallbackBtn) {
+  if (fallbackBtn && isElementInteractive(fallbackBtn)) {
     fallbackBtn.focus();
-    return;
+    if (document.activeElement === fallbackBtn) {
+      return;
+    }
   }
 
-  // If no action button is found (e.g. role changed to cashier), fall back to first visible search input
-  const searchInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="search"]'));
-  const visibleSearch = searchInputs.find(isElementVisible);
+  // If no action button is found or it is disabled, fall back to first visible and enabled search input
+  const searchInputs = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[type="search"]:not(:disabled)')
+  );
+  const visibleSearch = searchInputs.find(isElementInteractive);
   if (visibleSearch) {
     visibleSearch.focus();
   }
+};
+
+/**
+ * Returns focusable and currently interactive (not disabled, not hidden) elements within a container.
+ */
+export const getFocusableElements = (container: HTMLElement): HTMLElement[] => {
+  const elements = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+    )
+  );
+  return elements.filter(isElementVisible);
 };

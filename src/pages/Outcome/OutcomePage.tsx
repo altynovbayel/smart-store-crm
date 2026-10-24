@@ -1,163 +1,154 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Plus, CheckCircle2, X } from 'lucide-react';
+import { Navigate } from 'react-router-dom';
+import { Plus, CheckCircle2, X, AlertCircle, RotateCcw } from 'lucide-react';
 import type {
   OutcomeFilters,
   OutcomeDocument,
-  OutcomeFormData,
   OutcomeSummary,
 } from '../../types';
-import { useInventory } from '../../context';
-import { isToday, isWithinDays } from '../../utils/dateUtils';
-import { restoreFocusWithFallback } from '../../utils/focusUtils';
+import { OUTCOME_REASONS } from '../../types';
+import { useAuth } from '../../context';
+import {
+  calculateOutcomeSummaryStats,
+  filterOutcomeDocuments,
+} from '../../utils/outcomeCalculations';
 import {
   OutcomeStats,
   OutcomeToolbar,
   OutcomeTable,
   OutcomeFormModal,
   OutcomeViewModal,
+  OutcomePendingBanner,
 } from '../../components/outcome';
 import { Pagination } from '../../components/warehouse/Pagination/Pagination';
+import { useCurrentDateKey } from './hooks/useCurrentDateKey';
+import { useOutcomeNotification } from './hooks/useOutcomeNotification';
+import { usePendingOutcome } from './hooks/usePendingOutcome';
+import { useOutcomeData } from './hooks/useOutcomeData';
+import { useOutcomeSubmission } from './hooks/useOutcomeSubmission';
 import styles from './OutcomePage.module.scss';
 
+const DEFAULT_FILTERS: OutcomeFilters = {
+  searchQuery: '',
+  period: 'all',
+  reason: 'all',
+};
+
+const PAGE_SIZE = 8;
+
+/**
+ * OutcomePage connects to Supabase via outcomeApi and useOutcomeData.
+ * - Outcome documents and line items are loaded from public.outcome_documents and public.outcome_items.
+ * - Active products come from the role-aware rpc_list_products (admin response with purchase
+ *   prices, all keyset pages or nothing).
+ * - Write-off operations strictly execute transactional PostgreSQL RPC rpc_create_outcome_document.
+ * - Accessible strictly by active administrators (route guard + in-page isAdmin redirect).
+ */
 export const OutcomePage = () => {
-  const { outcomeDocuments, activeProducts, addOutcomeDocument } = useInventory();
+  const { user, profile, isAdmin } = useAuth();
+  const userId = user?.id ?? null;
 
-  // Filters state
-  const [filters, setFilters] = useState<OutcomeFilters>({
-    searchQuery: '',
-    period: 'all',
-    reason: 'all',
-  });
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 8;
+  // Filters & pagination state
+  const [filters, setFilters] = useState<OutcomeFilters>(DEFAULT_FILTERS);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = PAGE_SIZE;
 
   // Modal states
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [docToView, setDocToView] = useState<OutcomeDocument | null>(null);
+  const isCreateModalOpenRef = useRef<boolean>(isCreateModalOpen);
+  const docToViewRef = useRef<OutcomeDocument | null>(docToView);
+  useEffect(() => {
+    isCreateModalOpenRef.current = isCreateModalOpen;
+  }, [isCreateModalOpen]);
+  useEffect(() => {
+    docToViewRef.current = docToView;
+  }, [docToView]);
 
-  // Notification state and focus management
-  const [notification, setNotification] = useState<string | null>(null);
-  const [isToastFocused, setIsToastFocused] = useState(false);
-  const toastRef = useRef<HTMLDivElement>(null);
+  const isAnyModalOpen = useCallback(
+    () => isCreateModalOpenRef.current || Boolean(docToViewRef.current),
+    []
+  );
+
+  // Close modals on user switch or logout
+  const [prevUserId, setPrevUserId] = useState<string | null>(userId);
+  if (prevUserId !== userId) {
+    setPrevUserId(userId);
+    setIsCreateModalOpen(false);
+    setDocToView(null);
+  }
+
+  // Close create modal immediately if admin privileges are lost
+  const [prevIsAdmin, setPrevIsAdmin] = useState<boolean>(isAdmin);
+  if (prevIsAdmin !== isAdmin) {
+    setPrevIsAdmin(isAdmin);
+    if (!isAdmin && isCreateModalOpen) {
+      setIsCreateModalOpen(false);
+    }
+  }
+
+  const currentDateKey = useCurrentDateKey();
+
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const { notification, notify, dismissNotification, toastRef, setIsToastFocused } =
+    useOutcomeNotification(userId, previousFocusRef);
 
-  // Keep track of current calendar date (YYYY-MM-DD) to refresh date-dependent calculations across midnight/tab focus
-  const [currentDateKey, setCurrentDateKey] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  const { pendingOperation, persistPending, clearPending, confirmPendingFromDocuments } =
+    usePendingOutcome(userId);
+
+  // If the pending operation is found among loaded documents, it was committed on the server
+  const handleDocumentsLoaded = useCallback(
+    (loadedDocuments: OutcomeDocument[]): boolean => {
+      const confirmed = confirmPendingFromDocuments(loadedDocuments);
+      if (!confirmed) return false;
+      const reasonLabel = OUTCOME_REASONS[confirmed.payload.reason] || confirmed.payload.reason;
+      notify(`Документ списания («${reasonLabel}») успешно проведён и подтверждён на сервере.`);
+      return true;
+    },
+    [confirmPendingFromDocuments, notify]
+  );
+
+  const {
+    documents: serverDocuments,
+    isLoadingDocuments: isFetchingDocuments,
+    documentsLoadError,
+    isDocumentsTruncated,
+    products: serverProducts,
+    isLoadingProducts,
+    productsLoadError,
+    loadDocuments,
+    loadProducts,
+    reloadAll,
+  } = useOutcomeData({
+    userId,
+    isAdmin,
+    isAnyModalOpen,
+    onDocumentsLoaded: handleDocumentsLoaded,
   });
 
-  useEffect(() => {
-    const updateDate = () => {
-      const now = new Date();
-      const newKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-      setCurrentDateKey((prev) => (prev !== newKey ? newKey : prev));
-    };
+  const { isResolvingPending, handleResolvePending, handleCreateOutcome } = useOutcomeSubmission({
+    userId,
+    pendingOperation,
+    persistPending,
+    clearPending,
+    reloadAll,
+    refreshProducts: loadProducts,
+    notify,
+    isAnyModalOpen,
+  });
 
-    // 1. Refresh on tab focus and visibility change
-    const handleFocus = () => updateDate();
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleFocus);
+  // Resolving a pending operation counts as document loading (disables creation and retry)
+  const isLoadingDocuments = isFetchingDocuments || isResolvingPending;
 
-    // 2. Periodic interval (every 30s) to catch midnight transition smoothly
-    const interval = setInterval(updateDate, 30_000);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleFocus);
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Dismiss notification handler with focus return
-  const handleDismissNotification = useCallback(() => {
-    if (toastRef.current?.contains(document.activeElement)) {
-      restoreFocusWithFallback(
-        previousFocusRef.current,
-        '[data-add-outcome-btn]'
-      );
-    }
-    setNotification(null);
-  }, []);
-
-  // Auto-dismiss notification after 6 seconds, pausing if focus is inside toast
-  useEffect(() => {
-    if (!notification || isToastFocused) return;
-    const timer = setTimeout(() => {
-      if (toastRef.current?.contains(document.activeElement)) {
-        restoreFocusWithFallback(
-          previousFocusRef.current,
-          '[data-add-outcome-btn]'
-        );
-      }
-      setNotification(null);
-    }, 6000);
-    return () => clearTimeout(timer);
-  }, [notification, isToastFocused]);
-
-  // Dynamic statistics calculated across all outcome documents
+  // Dynamic statistics calculated across all server outcome documents
   const stats: OutcomeSummary = useMemo(() => {
-    let todayCount = 0;
-    let todayUnits = 0;
-    let todayCost = 0;
-    let monthCount = 0;
-
-    for (const doc of outcomeDocuments) {
-      if (isToday(doc.documentDate, currentDateKey)) {
-        todayCount += 1;
-        todayUnits += doc.totalQuantity;
-        todayCost += doc.totalCost;
-      }
-      if (isWithinDays(doc.documentDate, 30, currentDateKey)) {
-        monthCount += 1;
-      }
-    }
-
-    return {
-      todayCount,
-      todayUnits,
-      todayCost,
-      monthCount,
-    };
-  }, [outcomeDocuments, currentDateKey]);
+    return calculateOutcomeSummaryStats(serverDocuments, currentDateKey);
+  }, [serverDocuments, currentDateKey]);
 
   // Filter documents by search query, reason, and period
   const filteredDocuments = useMemo(() => {
-    return outcomeDocuments.filter((doc) => {
-      // 1. Search Query (outcomeNumber, comment, item names, item SKUs)
-      if (filters.searchQuery.trim()) {
-        const q = filters.searchQuery.trim().toLowerCase();
-        const matchNumber = doc.outcomeNumber.toLowerCase().includes(q);
-        const matchComment = doc.comment ? doc.comment.toLowerCase().includes(q) : false;
-        const matchItems = doc.items.some(
-          (it) =>
-            it.productName.toLowerCase().includes(q) ||
-            it.sku.toLowerCase().includes(q)
-        );
-        if (!matchNumber && !matchComment && !matchItems) {
-          return false;
-        }
-      }
-
-      // 2. Reason Filter
-      if (filters.reason !== 'all' && doc.reason !== filters.reason) {
-        return false;
-      }
-
-      // 3. Period Filter
-      if (filters.period === 'today') {
-        if (!isToday(doc.documentDate, currentDateKey)) return false;
-      } else if (filters.period === 'week') {
-        if (!isWithinDays(doc.documentDate, 7, currentDateKey)) return false;
-      } else if (filters.period === 'month') {
-        if (!isWithinDays(doc.documentDate, 30, currentDateKey)) return false;
-      }
-
-      return true;
-    });
-  }, [outcomeDocuments, filters, currentDateKey]);
+    return filterOutcomeDocuments(serverDocuments, filters, currentDateKey);
+  }, [serverDocuments, filters, currentDateKey]);
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredDocuments.length / pageSize) || 1;
@@ -174,11 +165,7 @@ export const OutcomePage = () => {
     filters.reason !== 'all';
 
   const handleResetFilters = useCallback(() => {
-    setFilters({
-      searchQuery: '',
-      period: 'all',
-      reason: 'all',
-    });
+    setFilters(DEFAULT_FILTERS);
     setCurrentPage(1);
     requestAnimationFrame(() => {
       const searchInput = document.querySelector<HTMLInputElement>(
@@ -195,12 +182,23 @@ export const OutcomePage = () => {
     setCurrentPage(1);
   }, []);
 
+  const isCreateDisabled =
+    isLoadingProducts || Boolean(productsLoadError) || isLoadingDocuments;
+  const createDisabledTooltip = productsLoadError
+    ? 'Не удалось загрузить каталог товаров'
+    : isLoadingProducts
+      ? 'Загрузка каталога товаров...'
+      : isLoadingDocuments
+        ? 'Загрузка данных списания...'
+        : undefined;
+
   const handleOpenCreateModal = useCallback(() => {
+    if (!isAdmin || isCreateDisabled) return;
     if (document.activeElement instanceof HTMLElement) {
       previousFocusRef.current = document.activeElement;
     }
     setIsCreateModalOpen(true);
-  }, []);
+  }, [isAdmin, isCreateDisabled]);
 
   const handleCloseCreateModal = useCallback(() => {
     setIsCreateModalOpen(false);
@@ -214,18 +212,9 @@ export const OutcomePage = () => {
     setDocToView(null);
   }, []);
 
-  const handleCreateOutcome = useCallback(
-    (data: OutcomeFormData): { success: boolean; error?: string } => {
-      const result = addOutcomeDocument(data);
-      if (result.success) {
-        setNotification(
-          `Списание товаров успешно проведено. Остатки на складе списаны.`
-        );
-      }
-      return result;
-    },
-    [addOutcomeDocument]
-  );
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className={styles.outcomePage}>
@@ -236,15 +225,19 @@ export const OutcomePage = () => {
           <p className={styles.subtitle}>Списание товаров со склада</p>
         </div>
 
-        <button
-          type="button"
-          data-add-outcome-btn
-          className={styles.addBtnHeader}
-          onClick={handleOpenCreateModal}
-        >
-          <Plus size={16} />
-          <span>Новое списание</span>
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            data-add-outcome-btn
+            className={styles.addBtnHeader}
+            onClick={handleOpenCreateModal}
+            disabled={isCreateDisabled}
+            title={createDisabledTooltip ?? 'Оформить новое списание товара'}
+          >
+            <Plus size={16} />
+            <span>Новое списание</span>
+          </button>
+        )}
       </header>
 
       {/* Notification Toast */}
@@ -267,10 +260,68 @@ export const OutcomePage = () => {
           <button
             type="button"
             className={styles.toastClose}
-            onClick={handleDismissNotification}
+            onClick={dismissNotification}
             aria-label="Закрыть уведомление"
           >
             <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Pending Unconfirmed Operation Banner */}
+      <OutcomePendingBanner
+        pendingOperation={pendingOperation}
+        isResolving={isResolvingPending}
+        isLoading={isLoadingDocuments}
+        onResolve={handleResolvePending}
+      />
+
+      {/* Truncated documents notice */}
+      {isDocumentsTruncated && (
+        <div className={styles.truncatedNotice} role="note">
+          <AlertCircle size={16} aria-hidden="true" />
+          <span>
+            Показаны последние {serverDocuments.length} актов списания (достигнут лимит выборки).
+          </span>
+        </div>
+
+      )}
+
+      {/* Error Banners with Retry */}
+      {documentsLoadError && (
+        <div className={styles.errorBanner} role="alert">
+          <div className={styles.errorInfo}>
+            <AlertCircle size={20} />
+            <span className={styles.errorText}>{documentsLoadError}</span>
+          </div>
+          <button
+            type="button"
+            data-retry-documents-btn
+            className={styles.retryBtn}
+            onClick={() => void loadDocuments(true)}
+            disabled={isLoadingDocuments}
+          >
+            <RotateCcw size={14} />
+            <span>{isLoadingDocuments ? 'Загрузка...' : 'Повторить'}</span>
+          </button>
+        </div>
+      )}
+
+      {productsLoadError && (
+        <div className={styles.errorBanner} role="alert">
+          <div className={styles.errorInfo}>
+            <AlertCircle size={20} />
+            <span className={styles.errorText}>{productsLoadError}</span>
+          </div>
+          <button
+            type="button"
+            data-retry-products-btn
+            className={styles.retryBtn}
+            onClick={() => void loadProducts(true)}
+            disabled={isLoadingProducts}
+          >
+            <RotateCcw size={14} />
+            <span>{isLoadingProducts ? 'Загрузка...' : 'Повторить'}</span>
           </button>
         </div>
       )}
@@ -284,37 +335,59 @@ export const OutcomePage = () => {
         onFilterChange={handleFilterChange}
         onResetFilters={handleResetFilters}
         onOpenCreateModal={handleOpenCreateModal}
+        canCreate={isAdmin}
+        isCreateDisabled={isCreateDisabled}
+        createDisabledTooltip={createDisabledTooltip}
       />
 
-      {/* Outcome Table */}
-      <OutcomeTable
-        documents={paginatedDocuments}
-        totalCount={outcomeDocuments.length}
-        hasActiveFilters={hasActiveFilters}
-        onResetFilters={handleResetFilters}
-        onOpenCreateModal={handleOpenCreateModal}
-        onViewDocument={handleViewDocument}
-      />
+      {/* Outcome Table with Loading State */}
+      {isLoadingDocuments && serverDocuments.length === 0 ? (
+        <div className={styles.tableLoadingCard}>
+          <div
+            className={styles.spinner}
+            role="progressbar"
+            aria-label="Загрузка документов списания"
+          />
+          <span className={styles.loadingText}>Загрузка документов списания...</span>
+        </div>
+      ) : (
+        <>
+          <OutcomeTable
+            documents={paginatedDocuments}
+            totalCount={serverDocuments.length}
+            hasActiveFilters={hasActiveFilters}
+            onResetFilters={handleResetFilters}
+            onOpenCreateModal={handleOpenCreateModal}
+            onViewDocument={handleViewDocument}
+            canCreate={isAdmin}
+            isCreateDisabled={isCreateDisabled}
+            createDisabledTooltip={createDisabledTooltip}
+          />
 
-      {/* Pagination */}
-      <Pagination
-        currentPage={safeCurrentPage}
-        totalPages={totalPages}
-        totalItems={filteredDocuments.length}
-        pageSize={pageSize}
-        onPageChange={(page) => setCurrentPage(page)}
-        itemLabel="актов списания"
-      />
+          {/* Pagination */}
+          <Pagination
+            currentPage={safeCurrentPage}
+            totalPages={totalPages}
+            totalItems={filteredDocuments.length}
+            pageSize={pageSize}
+            onPageChange={(page) => setCurrentPage(page)}
+            itemLabel="актов списания"
+          />
+        </>
+      )}
 
       {/* New Outcome Modal */}
-      {isCreateModalOpen && (
+      {isCreateModalOpen && isAdmin && (
         <OutcomeFormModal
           isOpen={isCreateModalOpen}
-          activeProducts={activeProducts}
+          activeProducts={serverProducts}
+          initialResponsiblePerson={profile?.full_name || 'Администратор'}
+          pendingOperation={pendingOperation}
           onClose={handleCloseCreateModal}
           onSubmit={handleCreateOutcome}
         />
       )}
+
 
       {/* View Finalized Outcome Modal */}
       {docToView && (

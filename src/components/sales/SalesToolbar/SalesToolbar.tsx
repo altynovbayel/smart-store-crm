@@ -14,6 +14,8 @@ export interface SalesToolbarProps {
   onResetFilters: () => void;
   onOpenCreateModal: () => void;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
+  isCreateDisabled?: boolean;
+  createDisabledTooltip?: string;
 }
 
 export const SalesToolbar = ({
@@ -22,6 +24,8 @@ export const SalesToolbar = ({
   onResetFilters,
   onOpenCreateModal,
   searchInputRef,
+  isCreateDisabled = false,
+  createDisabledTooltip,
 }: SalesToolbarProps) => {
   const localSearchInputRef = useRef<HTMLInputElement>(null);
   const effectiveSearchRef = searchInputRef ?? localSearchInputRef;
@@ -144,7 +148,8 @@ export const SalesToolbar = ({
           data-add-sale-btn
           className={styles.primaryButton}
           onClick={onOpenCreateModal}
-          title="Оформить новую продажу"
+          disabled={isCreateDisabled}
+          title={createDisabledTooltip ?? 'Оформить новую продажу'}
         >
           <Plus size={16} />
           <span>Новая продажа</span>

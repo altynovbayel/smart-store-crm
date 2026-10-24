@@ -4,7 +4,7 @@
  * rounding errors and strictly respects Number.MAX_SAFE_INTEGER limits.
  */
 
-export const MAX_SAFE_PRICE = 10_000_000; // Max unit purchase price: 10 000 000 som
+export const MAX_SAFE_PRICE = 100_000_000; // Max unit purchase price: 100 000 000 som
 
 export const toCents = (amount: number): number => Math.round(amount * 100);
 export const fromCents = (cents: number): number => cents / 100;
@@ -73,4 +73,64 @@ export const calculateIncomeTotals = (
     totalAmount: isOverflow ? 0 : fromCents(totalCents),
     isOverflow,
   };
+};
+
+import { isToday, isWithinDays } from './dateUtils';
+
+export const calculateIncomeSummaryStats = (
+  receipts: import('../types').IncomeReceipt[],
+  currentDateKey: string
+): import('../types').IncomeSummary => {
+  let todayCount = 0;
+  let todayUnits = 0;
+  let todayAmount = 0;
+  const suppliers = new Set<string>();
+
+  for (const receipt of receipts) {
+    if (receipt.supplier.trim()) {
+      suppliers.add(receipt.supplier.trim().toLowerCase());
+    }
+    if (isToday(receipt.receivedAt, currentDateKey)) {
+      todayCount += 1;
+      todayUnits += receipt.totalQuantity;
+      todayAmount += receipt.totalAmount;
+    }
+  }
+
+  return {
+    todayCount,
+    todayUnits,
+    todayAmount,
+    suppliersCount: suppliers.size,
+  };
+};
+
+export const filterIncomeReceipts = (
+  receipts: import('../types').IncomeReceipt[],
+  filters: import('../types').IncomeFilters,
+  currentDateKey: string
+): import('../types').IncomeReceipt[] => {
+  return receipts.filter((receipt) => {
+    // 1. Search Query
+    if (filters.searchQuery.trim()) {
+      const q = filters.searchQuery.trim().toLowerCase();
+      const matchNumber = receipt.receiptNumber.toLowerCase().includes(q);
+      const matchSupplier = receipt.supplier.toLowerCase().includes(q);
+      const matchDoc = receipt.documentNumber.toLowerCase().includes(q);
+      if (!matchNumber && !matchSupplier && !matchDoc) {
+        return false;
+      }
+    }
+
+    // 2. Period Filter
+    if (filters.period === 'today') {
+      if (!isToday(receipt.receivedAt, currentDateKey)) return false;
+    } else if (filters.period === 'week') {
+      if (!isWithinDays(receipt.receivedAt, 7, currentDateKey)) return false;
+    } else if (filters.period === 'month') {
+      if (!isWithinDays(receipt.receivedAt, 30, currentDateKey)) return false;
+    }
+
+    return true;
+  });
 };
