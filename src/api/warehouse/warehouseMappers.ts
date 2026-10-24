@@ -2,7 +2,6 @@ import type { Database } from '../../types/database.types';
 import type {
   Product,
   ProductCategory,
-  WarehouseMovement,
   WarehouseMovementType,
 } from '../../types';
 import {
@@ -13,7 +12,6 @@ import {
 import { minorToSom, somToMinor } from '../../utils/moneyUtils';
 
 type ProductRow = Database['public']['Tables']['products']['Row'];
-type StockMovementRow = Database['public']['Tables']['stock_movements']['Row'];
 
 export const mapMovementTypeToFrontend = (
   dbType: Database['public']['Enums']['movement_type']
@@ -63,29 +61,6 @@ export const mapProductRowToProduct = (row: ProductRow): Product => {
     iconType,
     isArchived: Boolean(row.is_archived),
     priceUpdatedAt: row.updated_at ? new Date(row.updated_at).getTime() : undefined,
-  };
-};
-
-/**
- * Maps a Supabase stock_movements row to frontend WarehouseMovement type.
- */
-export const mapStockMovementRowToMovement = (row: StockMovementRow): WarehouseMovement => {
-  const { type, typeLabel } = mapMovementTypeToFrontend(row.movement_type);
-
-  return {
-    id: row.id,
-    documentNumber: row.reference_number ?? `ДВИЖ-${row.id.substring(0, 8)}`,
-    type,
-    typeLabel,
-    productId: row.product_id,
-    productName: row.product_name_snapshot,
-    quantity: row.quantity_delta,
-    unit: 'шт.',
-    reason: row.note ?? undefined,
-    createdAt: row.occurred_at,
-    author: row.responsible_name,
-    receiptId: row.reference_id ?? undefined,
-    referenceId: row.reference_id ?? undefined,
   };
 };
 

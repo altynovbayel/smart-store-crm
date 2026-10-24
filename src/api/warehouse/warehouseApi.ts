@@ -2,7 +2,6 @@ import { supabase } from '../../lib/supabase';
 import type { Database } from '../../types/database.types';
 import type {
   Product,
-  WarehouseMovement,
   WarehouseCatalog,
   WarehouseCatalogProduct,
   WarehouseMovementsResult,
@@ -12,7 +11,6 @@ import type {
 import { getCategoryLabel } from '../../utils/productUtils';
 import {
   mapProductRowToProduct,
-  mapStockMovementRowToMovement,
   mapCreateProductToRpcArgs,
   mapUpdateProductToRpcArgs,
 } from './warehouseMappers';
@@ -53,117 +51,13 @@ export type {
 
 /**
  * Repository / API layer for Warehouse operations via Supabase.
- * - SELECT queries are read-only and enforce active user access.
+ * - Reads go through role-aware SECURITY DEFINER RPCs (rpc_list_products,
+ *   rpc_list_product_movements); there is no direct SELECT on tables.
  * - All mutations (create, update, adjust, archive) go strictly through
  *   transactional SECURITY DEFINER PostgreSQL RPCs.
  * - Direct INSERT, UPDATE, DELETE to tables are strictly avoided.
  */
 export const warehouseApi = {
-  /**
-   * Fetches active (non-archived) products for the warehouse catalog.
-   * Loads all records across pages using safe range chunking to prevent max_rows truncations.
-   */
-  async fetchProducts(signal?: AbortSignal): Promise<WarehouseApiResult<Product[]>> {
-    try {
-      const allRows: Database['public']['Tables']['products']['Row'][] = [];
-      const batchSize = 1000;
-      let from = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        let query = supabase
-          .from('products')
-          .select('*')
-          .eq('is_archived', false)
-          .order('name', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, from + batchSize - 1);
-
-        if (signal) {
-          query = query.abortSignal(signal);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-          return { success: false, error: mapWarehouseError(error) };
-        }
-
-        const rows = data ?? [];
-        allRows.push(...rows);
-
-        if (rows.length < batchSize) {
-          hasMore = false;
-        } else {
-          from += batchSize;
-        }
-      }
-
-      const products = allRows.map(mapProductRowToProduct);
-      return { success: true, data: products };
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        throw err;
-      }
-      return { success: false, error: mapWarehouseError(err) };
-    }
-  },
-
-  /**
-   * Fetches stock movements for a specific product.
-   * Sorted chronologically (occurred_at DESC, created_at DESC, id DESC).
-   * Safe chunked retrieval preventing 1000 row limits.
-   */
-  async fetchProductMovements(
-    productId: string,
-    signal?: AbortSignal
-  ): Promise<WarehouseApiResult<WarehouseMovement[]>> {
-    try {
-      const allRows: Database['public']['Tables']['stock_movements']['Row'][] = [];
-      const batchSize = 1000;
-      let from = 0;
-      let hasMore = true;
-
-      while (hasMore) {
-        let query = supabase
-          .from('stock_movements')
-          .select('*')
-          .eq('product_id', productId)
-          .order('occurred_at', { ascending: false })
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (signal) {
-          query = query.abortSignal(signal);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-          return { success: false, error: mapWarehouseError(error) };
-        }
-
-        const rows = data ?? [];
-        allRows.push(...rows);
-
-        if (rows.length < batchSize) {
-          hasMore = false;
-        } else {
-          from += batchSize;
-        }
-      }
-
-      const movements = allRows.map(mapStockMovementRowToMovement);
-      return { success: true, data: movements };
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        throw err;
-      }
-      return { success: false, error: mapWarehouseError(err) };
-    }
-  },
-
   /**
    * Role-aware warehouse catalog via rpc_list_products (admin: full rows; cashier: no purchase
    * price / description / timestamps). Loads ALL pages by keyset cursor (id ASC):

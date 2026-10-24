@@ -6,7 +6,7 @@ import {
   useMemo,
   type ReactNode,
 } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
+import { REALTIME_SUBSCRIBE_STATES, type User, type Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { mapMyProfileResponse, MyProfileDataError } from '../api/auth';
 import { AuthContext } from './AuthContext';
@@ -22,6 +22,8 @@ export interface AuthProviderProps {
 
 /** Fallback profile re-check period while the tab is visible (Realtime may drop silently). */
 const PROFILE_RECHECK_INTERVAL_MS = 60_000;
+/** Minimum gap between profile re-checks triggered by Realtime subscription errors. */
+const PROFILE_ERROR_RECHECK_MIN_MS = 30_000;
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -262,7 +264,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     currentUserRef.current = user;
-    if (!user) return;
+  }, [user]);
+
+  // Keyed by the user id, not the User object: every background profile check stores a new User
+  // object from getSession(), which must not tear down and re-join the Realtime channel.
+  const userId = user?.id ?? null;
+
+  useEffect(() => {
+    if (!userId) return;
+
+    // A failed subscription (join error, timeout, or a postgres_changes system error such as a
+    // rejected filter) means updates may not arrive: re-check the profile at once, at most once per
+    // PROFILE_ERROR_RECHECK_MIN_MS so the client's automatic re-joins cannot cause a request loop.
+    let lastErrorCheckAt = 0;
+    const handleSubscriptionError = () => {
+      const now = Date.now();
+      if (now - lastErrorCheckAt < PROFILE_ERROR_RECHECK_MIN_MS) return;
+      lastErrorCheckAt = now;
+      requestProfileCheck();
+    };
 
     // Realtime subscription on the user's own public.profiles row to immediately reflect role updates
     // and account deactivation. UPDATE only: the profile exists before the first sign-in, and per the
@@ -270,21 +290,33 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // by the fallback check: rpc_get_my_profile returns null). The payload is never read; only the
     // columns the client may SELECT (migration 20261023100000) are requested.
     const channel = supabase
-      .channel(`profile-updates-${user.id}`)
+      .channel(`profile-updates-${userId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'profiles',
-          filter: `id=eq.${user.id}`,
+          filter: `id=eq.${userId}`,
           select: ['id', 'role', 'is_active'],
         },
         () => {
           requestProfileCheck();
         }
       )
-      .subscribe();
+      .on('system', {}, (payload: { status?: unknown }) => {
+        if (payload?.status === 'error') {
+          handleSubscriptionError();
+        }
+      })
+      .subscribe((subscribeStatus) => {
+        if (
+          subscribeStatus === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+          subscribeStatus === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
+        ) {
+          handleSubscriptionError();
+        }
+      });
 
     // Fallback while the tab is visible, in case the Realtime connection silently drops
     const fallbackTimer = window.setInterval(() => {
@@ -297,7 +329,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       window.clearInterval(fallbackTimer);
       supabase.removeChannel(channel);
     };
-  }, [user, requestProfileCheck]);
+  }, [userId, requestProfileCheck]);
 
   useEffect(() => {
     isMountedRef.current = true;
