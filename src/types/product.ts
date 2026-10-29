@@ -20,6 +20,7 @@ export const PRODUCT_CATEGORIES = [
   { key: 'cameras', label: 'Камеры' },
   { key: 'fmtransmitters', label: 'Автомодуляторы' },
   { key: 'converters', label: 'Переходники' }, // connector / interface converters
+  { key: 'chargers', label: 'Зарядные устройства' },
   { key: 'other', label: 'Другое' },
 ] as const satisfies readonly { key: string; label: string }[];
 
@@ -47,6 +48,7 @@ export type ProductIconType =
   | 'camera'
   | 'fmtransmitter'
   | 'converter'
+  | 'charger'
   | 'package';
 
 export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';

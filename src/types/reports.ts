@@ -266,7 +266,7 @@ export interface SalesReportData {
 /** Warehouse report over all active products. */
 export interface WarehouseReportData {
   summary: WarehouseReportSummary;
-  /** All 16 predefined categories (zeros included, unknown keys merged into 'other'). */
+  /** All 17 predefined categories (zeros included, unknown keys merged into 'other'). */
   categories: CategoryStockReportItem[];
   statuses: StockStatusReportItem[];
   /** First N most critical products (server limit). */

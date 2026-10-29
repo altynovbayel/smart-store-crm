@@ -236,7 +236,7 @@ const toSafeNumber = (value: bigint): number => {
 
 /**
  * Parses rpc_get_warehouse_report:
- * - categories completed to all 16 predefined keys; unknown / legacy keys are merged into 'other'
+ * - categories completed to all 17 predefined keys; unknown / legacy keys are merged into 'other'
  *   (each server group is counted exactly once);
  * - Σ statuses and Σ category positions must equal active_positions_count.
  */

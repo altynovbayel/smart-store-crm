@@ -5,6 +5,7 @@ import {
   Camera,
   Radio,
   Usb,
+  PlugZap,
   Package,
   type LucideIcon,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ const LUCIDE_THUMBNAIL_ICONS: Partial<Record<ProductIconType, LucideIcon>> = {
   camera: Camera,
   fmtransmitter: Radio,
   converter: Usb,
+  charger: PlugZap,
   package: Package,
 };
 

@@ -88,6 +88,8 @@ export const getIconTypeByCategory = (category: ProductCategory): ProductIconTyp
       return 'fmtransmitter';
     case 'converters':
       return 'converter';
+    case 'chargers':
+      return 'charger';
     case 'other':
       return 'package';
     default: {
