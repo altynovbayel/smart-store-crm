@@ -29,3 +29,17 @@ dist-ssr
 
 # Codex review report
 codex-review.md
+
+# Backups, dumps and keys
+*.bak
+*.backup
+*.orig
+*.dump
+backups/
+*.pem
+*.key
+*.p12
+.env.keys
+
+# Vercel
+.vercel
