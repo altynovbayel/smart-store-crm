@@ -12,3 +12,4 @@ export type * from './apiError';
 export type * from './dashboard';
 export * from './salesRpc';
 export * from './priceHistoryRpc';
+export type * from './productSearch';

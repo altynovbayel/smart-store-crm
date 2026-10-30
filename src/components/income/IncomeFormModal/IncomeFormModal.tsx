@@ -1,14 +1,23 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { X, Plus, AlertCircle, ArrowDownToLine } from 'lucide-react';
-import type { IncomeCatalogProduct, IncomeReceiptFormData, FormItemState } from '../../../types';
+import type {
+  IncomeCatalogProduct,
+  IncomeReceiptFormData,
+  FormItemState,
+  ProductPickResult,
+} from '../../../types';
 import { getCurrentLocalDatetime } from '../../../utils/dateUtils';
 import { formatCurrency, formatNumber } from '../../../utils/formatUtils';
 import { restoreFocusWithFallback } from '../../../utils/focusUtils';
 import {
+  addIncomeProductLine,
   calculateIncomeTotals,
   MAX_SAFE_PRICE,
   toCents,
 } from '../../../utils/incomeCalculations';
+import { createFormRowId } from '../../../utils/productSearch';
+import { useProductSearchPicker } from '../../../hooks/useProductSearchPicker';
+import { ProductSearchField } from '../../common/ProductSearchField/ProductSearchField';
 import { IncomeFormItemRow } from './IncomeFormItemRow';
 import {
   normalizeIncomePayload,
@@ -75,26 +84,16 @@ export const IncomeFormModal = ({
     'Администратор';
   const [comment, setComment] = useState(() => pendingOperation?.payload.comment ?? '');
 
-  // Initial single empty item or restored pending operation items
-  const [items, setItems] = useState<FormItemState[]>(() => {
-    if (pendingOperation?.payload.items && pendingOperation.payload.items.length > 0) {
-      return pendingOperation.payload.items.map((it, idx) => ({
-        id: `pending-row-${idx + 1}`,
-        productId: it.productId,
-        rawQuantity: String(it.quantity),
-        rawPurchasePrice: String(it.purchasePrice),
-      }));
-    }
-    const firstProduct = activeProducts[0];
-    return [
-      {
-        id: `row-1`,
-        productId: firstProduct ? firstProduct.id : '',
-        rawQuantity: '10',
-        rawPurchasePrice: firstProduct ? String(firstProduct.purchasePrice) : '',
-      },
-    ];
-  });
+  // A new receipt starts without lines (no catalog product is preselected);
+  // a pending operation restores its original lines
+  const [items, setItems] = useState<FormItemState[]>(() =>
+    (pendingOperation?.payload.items ?? []).map((it, idx) => ({
+      id: `pending-row-${idx + 1}`,
+      productId: it.productId,
+      rawQuantity: String(it.quantity),
+      rawPurchasePrice: String(it.purchasePrice),
+    }))
+  );
 
   const [errors, setErrors] = useState<Record<string, string>>(() => {
     const initialErrors: Record<string, string> = {};
@@ -107,6 +106,27 @@ export const IncomeFormModal = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
+
+  // Scan / search: re-scanning the same product increments its line instead of duplicating it
+  const handlePickProduct = (product: IncomeCatalogProduct): ProductPickResult => {
+    const res = addIncomeProductLine(items, product, createFormRowId());
+    if (!res.ok) return res;
+    setItems(res.items);
+    if (errors.itemsGeneral) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.itemsGeneral;
+        return next;
+      });
+    }
+    return { ok: true, message: res.message };
+  };
+
+  const productPicker = useProductSearchPicker({
+    products: activeProducts,
+    disabled: isSubmitting,
+    onPick: handlePickProduct,
+  });
 
   useEffect(() => {
     isSubmittingRef.current = isSubmitting;
@@ -182,28 +202,27 @@ export const IncomeFormModal = ({
 
   if (!isOpen) return null;
 
-  // Add line item
+  // Manual line: empty product choice (nothing is preselected), focus moves to its select
   const handleAddItem = () => {
     if (isSubmitting) return;
-
-    // Pick the first product that is not already chosen in items
-    const selectedIds = new Set(items.map((it) => it.productId));
-    const available = activeProducts.find((p) => !selectedIds.has(p.id)) ?? activeProducts[0];
-
+    const rowId = createFormRowId();
     setItems((prev) => [
       ...prev,
-      {
-        id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        productId: available ? available.id : '',
-        rawQuantity: '10',
-        rawPurchasePrice: available ? String(available.purchasePrice) : '',
-      },
+      { id: rowId, productId: '', rawQuantity: '1', rawPurchasePrice: '' },
     ]);
+
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      document.getElementById(`item-prod-${rowId}`)?.focus();
+    });
   };
 
   // Remove line item and retain accessible focus
   const handleRemoveItem = (id: string) => {
-    if (isSubmitting || items.length <= 1) return;
+    if (isSubmitting) return;
     const targetIndex = items.findIndex((it) => it.id === id);
     setItems((prev) => prev.filter((it) => it.id !== id));
 
@@ -230,10 +249,8 @@ export const IncomeFormModal = ({
         );
         (deleteBtn ?? anyInput ?? targetRow)?.focus();
       } else {
-        const addItemBtn = modalRef.current.querySelector<HTMLElement>(
-          `.${styles.addItemBtn}`
-        );
-        addItemBtn?.focus();
+        // No lines left: back to the search / scan field
+        productPicker.inputRef.current?.focus();
       }
     });
   };
@@ -662,10 +679,16 @@ export const IncomeFormModal = ({
                 </button>
               </div>
 
+              <ProductSearchField inputId="inc-product-search" picker={productPicker} />
+
               {errors.itemsGeneral && (
                 <span className={styles.errorText} role="alert">
                   {errors.itemsGeneral}
                 </span>
+              )}
+
+              {items.length === 0 && (
+                <p className={styles.itemsEmpty}>Добавьте товар через поиск или сканер</p>
               )}
 
               <div className={styles.itemsList}>
@@ -682,7 +705,6 @@ export const IncomeFormModal = ({
                       selectedProduct={selectedProduct}
                       allItems={items}
                       errors={errors}
-                      isOnlyRow={items.length <= 1}
                       disabled={isSubmitting}
                       onProductChange={handleItemProductChange}
                       onFieldChange={handleItemFieldChange}
@@ -735,7 +757,8 @@ export const IncomeFormModal = ({
             <button
               type="submit"
               className={styles.submitBtn}
-              disabled={isSubmitting}
+              disabled={isSubmitting || items.length === 0}
+              title={items.length === 0 ? 'Добавьте хотя бы один товар' : undefined}
             >
               {isSubmitting ? 'Проведение...' : 'Провести приход'}
             </button>

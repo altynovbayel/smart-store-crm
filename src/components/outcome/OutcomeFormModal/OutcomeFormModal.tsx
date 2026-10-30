@@ -6,15 +6,20 @@ import type {
   OutcomeReason,
   OutcomeSubmitPayload,
   OutcomeSubmitResult,
+  ProductPickResult,
 } from '../../../types';
 import {
   getCurrentLocalDatetime,
   formatToLocalDatetime,
 } from '../../../utils/dateUtils';
 import {
+  addOutcomeProductLine,
   calculateOutcomeTotals,
   validateOutcomeForm,
 } from '../../../utils/outcomeCalculations';
+import { createFormRowId } from '../../../utils/productSearch';
+import { useProductSearchPicker } from '../../../hooks/useProductSearchPicker';
+import { ProductSearchField } from '../../common/ProductSearchField/ProductSearchField';
 import { generateUuid, isValidUuid } from '../../../utils/uuidUtils';
 import { isIndeterminateOutcomeError } from '../../../api/outcome';
 import {
@@ -85,24 +90,15 @@ export const OutcomeFormModal = ({
     () => pendingOperation?.payload.comment ?? ''
   );
 
-  // Initial single item with first product having stock > 0 or restored pending operation items
-  const [items, setItems] = useState<OutcomeFormItemState[]>(() => {
-    if (pendingOperation?.payload.items && pendingOperation.payload.items.length > 0) {
-      return pendingOperation.payload.items.map((it, idx) => ({
-        id: `pending-row-${idx + 1}`,
-        productId: it.productId,
-        rawQuantity: String(it.quantity),
-      }));
-    }
-    const firstAvailable = activeProducts.find((p) => p.stock > 0) ?? activeProducts[0];
-    return [
-      {
-        id: 'row-1',
-        productId: firstAvailable ? firstAvailable.id : '',
-        rawQuantity: '1',
-      },
-    ];
-  });
+  // A new write-off starts without lines (no catalog product is preselected);
+  // a pending operation restores its original lines
+  const [items, setItems] = useState<OutcomeFormItemState[]>(() =>
+    (pendingOperation?.payload.items ?? []).map((it, idx) => ({
+      id: `pending-row-${idx + 1}`,
+      productId: it.productId,
+      rawQuantity: String(it.quantity),
+    }))
+  );
 
   const [errors, setErrors] = useState<Record<string, string>>(() => {
     const initialErrors: Record<string, string> = {};
@@ -140,6 +136,27 @@ export const OutcomeFormModal = ({
 
   useOutcomeModalA11y({ isOpen, modalRef, isSubmittingRef, onClose });
 
+  // Scan / search: re-scanning increments the line only within the loaded stock
+  const handlePickProduct = (product: Product): ProductPickResult => {
+    const res = addOutcomeProductLine(items, product, createFormRowId());
+    if (!res.ok) return res;
+    setItems(res.items);
+    if (errors.itemsGeneral) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.itemsGeneral;
+        return next;
+      });
+    }
+    return { ok: true, message: res.message };
+  };
+
+  const productPicker = useProductSearchPicker({
+    products: activeProducts,
+    disabled: isSubmitting,
+    onPick: handlePickProduct,
+  });
+
   if (!isOpen) return null;
 
   const scheduleFocus = (focusFn: () => void) => {
@@ -152,28 +169,18 @@ export const OutcomeFormModal = ({
     });
   };
 
-  // Add line item
+  // Manual line: empty product choice (nothing is preselected), focus moves to its select
   const handleAddItem = () => {
-    // Pick the first product with stock > 0 that is not already chosen in items
-    const selectedIds = new Set(items.map((it) => it.productId));
-    const available =
-      activeProducts.find((p) => !selectedIds.has(p.id) && p.stock > 0) ??
-      activeProducts.find((p) => !selectedIds.has(p.id)) ??
-      activeProducts[0];
-
-    setItems((prev) => [
-      ...prev,
-      {
-        id: `row-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        productId: available ? available.id : '',
-        rawQuantity: '1',
-      },
-    ]);
+    const rowId = createFormRowId();
+    setItems((prev) => [...prev, { id: rowId, productId: '', rawQuantity: '1' }]);
+    scheduleFocus(() => {
+      document.getElementById(`item-prod-${rowId}`)?.focus();
+    });
   };
 
   // Remove line item and retain accessible focus
   const handleRemoveItem = (id: string) => {
-    if (items.length <= 1) return;
+    if (isSubmittingRef.current) return;
     const targetIndex = items.findIndex((it) => it.id === id);
     setItems((prev) => prev.filter((it) => it.id !== id));
 
@@ -195,10 +202,8 @@ export const OutcomeFormModal = ({
         );
         (deleteBtn ?? anyInput ?? targetRow)?.focus();
       } else {
-        const addItemBtn = modalRef.current.querySelector<HTMLElement>(
-          `.${styles.addItemBtn}`
-        );
-        addItemBtn?.focus();
+        // No lines left: back to the search / scan field
+        productPicker.inputRef.current?.focus();
       }
     });
   };
@@ -419,10 +424,16 @@ export const OutcomeFormModal = ({
                 </button>
               </div>
 
+              <ProductSearchField inputId="out-product-search" picker={productPicker} />
+
               {errors.itemsGeneral && (
                 <span className={styles.errorText} role="alert">
                   {errors.itemsGeneral}
                 </span>
+              )}
+
+              {items.length === 0 && (
+                <p className={styles.itemsEmpty}>Добавьте товар через поиск или сканер</p>
               )}
 
               <div className={styles.itemsList}>
@@ -439,7 +450,6 @@ export const OutcomeFormModal = ({
                       selectedProduct={selectedProduct}
                       allItems={items}
                       errors={errors}
-                      isOnlyRow={items.length <= 1}
                       disabled={isSubmitting}
                       historicalPrice={
                         item.productId ? historicalPrices[item.productId] : undefined
@@ -476,7 +486,8 @@ export const OutcomeFormModal = ({
             <button
               type="submit"
               className={styles.submitBtn}
-              disabled={isSubmitting}
+              disabled={isSubmitting || items.length === 0}
+              title={items.length === 0 ? 'Добавьте хотя бы один товар' : undefined}
             >
               {isSubmitting
                 ? 'Проведение...'

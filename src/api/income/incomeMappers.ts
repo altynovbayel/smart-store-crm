@@ -105,6 +105,7 @@ export const mapCatalogToIncomeProducts = (
     products.push({
       id: item.id,
       sku: item.sku,
+      barcode: item.barcode,
       name: item.name,
       sellingPrice: item.sellingPrice,
       stock: item.stock,

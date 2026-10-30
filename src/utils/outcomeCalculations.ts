@@ -7,6 +7,7 @@ import type {
   OutcomeSummary,
   Product,
   HistoricalPriceResult,
+  ProductLineAddResult,
 } from '../types';
 import {
   parseCustomDate,
@@ -14,7 +15,7 @@ import {
   isToday,
   isWithinDays,
 } from './dateUtils';
-import { toCents, fromCents } from './incomeCalculations';
+import { toCents, fromCents, invalidLineQuantityMessage } from './incomeCalculations';
 import { getHistoricalPurchasePrice } from './productUtils';
 
 
@@ -41,6 +42,57 @@ export const calculateOutcomeSubtotal = (
   const lineCents = qty * toCents(purchasePrice);
   if (!Number.isSafeInteger(lineCents)) return null;
   return fromCents(lineCents);
+};
+
+export const INSUFFICIENT_STOCK_MESSAGE = 'Недостаточно товара на складе';
+
+/**
+ * Adds a scanned / selected product to the write-off lines without creating duplicates.
+ * The quantity grows by 1 only while it stays within the loaded stock; otherwise nothing changes.
+ * An empty manual row is filled first; else a new row with quantity 1 is appended.
+ * The cost is not stored in the row: it keeps coming from the historical price RPC.
+ * NOTE: the loaded stock is only a hint — the server re-checks stock on conducting.
+ */
+export const addOutcomeProductLine = (
+  items: readonly OutcomeFormItemState[],
+  product: Product,
+  newRowId: string
+): ProductLineAddResult<OutcomeFormItemState> => {
+  const existing = items.find((it) => it.productId === product.id);
+  // An empty quantity counts as 0; an invalid one is never silently replaced
+  const currentQty =
+    existing && existing.rawQuantity.trim() ? parseOutcomeQuantity(existing.rawQuantity) : 0;
+  if (currentQty === null) {
+    return { ok: false, error: invalidLineQuantityMessage(product.name) };
+  }
+  const nextQty = currentQty + 1;
+
+  if (nextQty > product.stock) {
+    return {
+      ok: false,
+      error: `${INSUFFICIENT_STOCK_MESSAGE}: «${product.name}», доступно ${product.stock} ${product.unit}`,
+    };
+  }
+
+  if (existing) {
+    return {
+      ok: true,
+      items: items.map((it) =>
+        it.id === existing.id ? { ...it, rawQuantity: String(nextQty) } : it
+      ),
+      message: `Количество увеличено: ${product.name} — ${nextQty} ${product.unit}`,
+    };
+  }
+
+  const line = { productId: product.id, rawQuantity: '1' };
+  const emptyRow = items.find((it) => !it.productId);
+  return {
+    ok: true,
+    items: emptyRow
+      ? items.map((it) => (it.id === emptyRow.id ? { ...it, ...line } : it))
+      : [...items, { id: newRowId, ...line }],
+    message: `Товар добавлен: ${product.name}`,
+  };
 };
 
 export interface OutcomeTotals {

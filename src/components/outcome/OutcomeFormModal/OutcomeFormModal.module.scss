@@ -252,6 +252,16 @@
   color: $color-text-primary;
 }
 
+.itemsEmpty {
+  margin: 0;
+  padding: $spacing-lg $spacing-md;
+  border: 1px dashed $color-border-hover;
+  border-radius: $radius-lg;
+  text-align: center;
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+}
+
 .addItemBtn {
   @include button-reset;
   display: inline-flex;

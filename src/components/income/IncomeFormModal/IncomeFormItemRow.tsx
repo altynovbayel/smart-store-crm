@@ -11,7 +11,6 @@ export interface IncomeFormItemRowProps {
   selectedProduct?: IncomeCatalogProduct;
   allItems: FormItemState[];
   errors: Record<string, string>;
-  isOnlyRow: boolean;
   disabled?: boolean;
   onProductChange: (rowId: string, newProductId: string) => void;
   onFieldChange: (
@@ -29,7 +28,6 @@ export const IncomeFormItemRow = ({
   selectedProduct,
   allItems,
   errors,
-  isOnlyRow,
   disabled = false,
   onProductChange,
   onFieldChange,
@@ -164,14 +162,10 @@ export const IncomeFormItemRow = ({
         <button
           type="button"
           className={styles.deleteRowBtn}
-          disabled={isOnlyRow || disabled}
+          disabled={disabled}
           onClick={() => onRemove(item.id)}
           aria-label={`Удалить строку ${index + 1}`}
-          title={
-            isOnlyRow
-              ? 'В накладной должна остаться минимум 1 строка'
-              : 'Удалить строку'
-          }
+          title="Удалить строку"
         >
           <Trash2 size={16} />
         </button>

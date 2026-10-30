@@ -4,6 +4,8 @@
  * rounding errors and strictly respects Number.MAX_SAFE_INTEGER limits.
  */
 
+import type { FormItemState, IncomeCatalogProduct, ProductLineAddResult } from '../types';
+
 export const MAX_SAFE_PRICE = 100_000_000; // Max unit purchase price: 100 000 000 som
 
 export const toCents = (amount: number): number => Math.round(amount * 100);
@@ -34,6 +36,65 @@ export const calculateItemSubtotal = (
   const totalCents = qty * priceCents;
   if (!Number.isSafeInteger(totalCents)) return null;
   return fromCents(totalCents);
+};
+
+/** Refusal of a rescan while the existing line holds an invalid quantity (shared by Outcome). */
+export const invalidLineQuantityMessage = (productName: string): string =>
+  `Исправьте количество товара «${productName}» в документе, затем отсканируйте снова`;
+
+/** Max quantity of one receipt line (same bound as the form validation). */
+export const MAX_INCOME_ITEM_QUANTITY = 1_000_000;
+
+/**
+ * Adds a scanned / selected product to the receipt lines without creating duplicates:
+ * - already in the receipt: quantity + 1, the entered purchase price is kept;
+ * - an empty manual row exists: it is filled (quantity 1, catalog purchase price);
+ * - otherwise a new row (quantity 1, catalog purchase price — same default as choosing the
+ *   product in a row's select).
+ */
+export const addIncomeProductLine = (
+  items: readonly FormItemState[],
+  product: IncomeCatalogProduct,
+  newRowId: string
+): ProductLineAddResult<FormItemState> => {
+  const existing = items.find((it) => it.productId === product.id);
+  if (existing) {
+    // An empty quantity counts as 0; an invalid one is never silently replaced
+    const currentQty = existing.rawQuantity.trim()
+      ? parseItemQuantity(existing.rawQuantity)
+      : 0;
+    if (currentQty === null) {
+      return { ok: false, error: invalidLineQuantityMessage(product.name) };
+    }
+    const nextQty = currentQty + 1;
+    if (nextQty > MAX_INCOME_ITEM_QUANTITY) {
+      return {
+        ok: false,
+        error: `Количество товара «${product.name}» не может превышать 1 000 000`,
+      };
+    }
+    return {
+      ok: true,
+      items: items.map((it) =>
+        it.id === existing.id ? { ...it, rawQuantity: String(nextQty) } : it
+      ),
+      message: `Количество увеличено: ${product.name} — ${nextQty} ${product.unit}`,
+    };
+  }
+
+  const line = {
+    productId: product.id,
+    rawQuantity: '1',
+    rawPurchasePrice: String(product.purchasePrice),
+  };
+  const emptyRow = items.find((it) => !it.productId);
+  return {
+    ok: true,
+    items: emptyRow
+      ? items.map((it) => (it.id === emptyRow.id ? { ...it, ...line } : it))
+      : [...items, { id: newRowId, ...line }],
+    message: `Товар добавлен: ${product.name}`,
+  };
 };
 
 export interface IncomeTotals {

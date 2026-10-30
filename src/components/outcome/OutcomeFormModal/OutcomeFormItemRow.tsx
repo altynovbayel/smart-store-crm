@@ -15,7 +15,6 @@ export interface OutcomeFormItemRowProps {
   selectedProduct?: Product;
   allItems: OutcomeFormItemState[];
   errors: Record<string, string>;
-  isOnlyRow: boolean;
   disabled?: boolean;
   historicalPrice?: HistoricalPriceResult;
   priceStatus?: 'idle' | 'loading' | 'ready' | 'error';
@@ -31,7 +30,6 @@ export const OutcomeFormItemRow = ({
   selectedProduct,
   allItems,
   errors,
-  isOnlyRow,
   disabled = false,
   historicalPrice,
   priceStatus = 'ready',
@@ -194,14 +192,10 @@ export const OutcomeFormItemRow = ({
         <button
           type="button"
           className={styles.deleteRowBtn}
-          disabled={isOnlyRow || disabled}
+          disabled={disabled}
           onClick={() => onRemove(item.id)}
           aria-label={`Удалить позицию ${index + 1}`}
-          title={
-            isOnlyRow
-              ? 'В документе должна остаться минимум 1 строка'
-              : 'Удалить позицию'
-          }
+          title="Удалить позицию"
         >
           <Trash2 size={16} />
         </button>
