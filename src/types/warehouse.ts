@@ -124,6 +124,17 @@ export interface WarehouseCatalog {
   products: WarehouseCatalogProduct[];
 }
 
+/** Warehouse page view: the active catalog or the admin-only archive. */
+export type WarehouseViewMode = 'active' | 'archived';
+
+/** Parsed rpc_restore_product response (migration 20261030100000). */
+export interface WarehouseRestoreResult {
+  /** false: the product was already active (idempotent repeat, nothing changed). */
+  restored: boolean;
+  /** Admin catalog row of the restored product (isArchived is always false). */
+  product: WarehouseCatalogProduct;
+}
+
 /** Stock movement as displayed on the Warehouse page (cashier: no note / responsible). */
 export interface WarehouseMovementView {
   id: string;

@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   History,
   Archive,
+  ArchiveRestore,
   PackageOpen,
 } from 'lucide-react';
 import type {
@@ -37,6 +38,11 @@ export interface ProductsTableProps {
   canManageProducts?: boolean;
   /** Purchase price column (admin only); without it the column is not rendered at all. */
   showPurchasePrice?: boolean;
+  /** 'archived': every row offers only «Восстановить» (admin archive view). */
+  variant?: 'active' | 'archived';
+  onRestoreProduct?: (product: Product) => void;
+  /** Overrides the "nothing found" state, e.g. an empty archive (no reset button). */
+  emptyState?: { title: string; subtitle: string };
 }
 
 interface MenuCoords {
@@ -55,7 +61,11 @@ export const ProductsTable = ({
   onResetFilters,
   canManageProducts = true,
   showPurchasePrice = false,
+  variant = 'active',
+  onRestoreProduct,
+  emptyState,
 }: ProductsTableProps) => {
+  const isArchiveView = variant === 'archived';
   const [activeMenuProduct, setActiveMenuProduct] = useState<Product | null>(null);
   const [menuCoords, setMenuCoords] = useState<MenuCoords | null>(null);
   const activeTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -262,17 +272,20 @@ export const ProductsTable = ({
         <div className={styles.emptyIconBox}>
           <PackageOpen size={40} className={styles.emptyIcon} />
         </div>
-        <h3 className={styles.emptyTitle}>Товары не найдены</h3>
+        <h3 className={styles.emptyTitle}>{emptyState?.title ?? 'Товары не найдены'}</h3>
         <p className={styles.emptySubtitle}>
-          По вашему запросу ничего не найдено. Попробуйте изменить поисковый запрос или сбросить фильтры.
+          {emptyState?.subtitle ??
+            'По вашему запросу ничего не найдено. Попробуйте изменить поисковый запрос или сбросить фильтры.'}
         </p>
-        <button
-          type="button"
-          className={styles.emptyResetBtn}
-          onClick={handleEmptyReset}
-        >
-          Сбросить фильтры
-        </button>
+        {!emptyState && (
+          <button
+            type="button"
+            className={styles.emptyResetBtn}
+            onClick={handleEmptyReset}
+          >
+            Сбросить фильтры
+          </button>
+        )}
       </div>
     );
   }
@@ -392,32 +405,52 @@ export const ProductsTable = ({
                   <span className={styles.minStockText}>мин: {product.minStockThreshold} {product.unit}</span>
                 </td>
 
-                {/* Automatic Status Badge */}
+                {/* Automatic Status Badge (archive view: product state instead of stock status) */}
                 <td className={styles.statusCell}>
-                  <Badge variant={getStatusBadgeVariant(product.status)} dot>
-                    {getStockStatusLabel(product.status)}
-                  </Badge>
+                  {isArchiveView ? (
+                    <Badge variant="neutral" dot>
+                      В архиве
+                    </Badge>
+                  ) : (
+                    <Badge variant={getStatusBadgeVariant(product.status)} dot>
+                      {getStockStatusLabel(product.status)}
+                    </Badge>
+                  )}
                 </td>
 
-                {/* Actions Trigger Button */}
+                {/* Actions: «Восстановить» in the archive view, otherwise the actions menu */}
                 <td className={styles.actionsCell}>
-                  <div className={styles.actionMenuWrapper}>
-                    <button
-                      type="button"
-                      className={styles.moreBtn}
-                      onClick={(e) => handleToggleMenu(e, product)}
-                      aria-label={`Действия с товаром ${product.name}`}
-                      aria-haspopup="menu"
-                      aria-expanded={activeMenuProduct?.id === product.id}
-                      aria-controls={
-                        activeMenuProduct?.id === product.id
-                          ? 'product-actions-menu'
-                          : undefined
-                      }
-                    >
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </div>
+                  {isArchiveView ? (
+                    onRestoreProduct && (
+                      <button
+                        type="button"
+                        className={styles.restoreBtn}
+                        onClick={() => onRestoreProduct(product)}
+                        aria-label={`Восстановить товар ${product.name}`}
+                      >
+                        <ArchiveRestore size={14} aria-hidden="true" />
+                        <span>Восстановить</span>
+                      </button>
+                    )
+                  ) : (
+                    <div className={styles.actionMenuWrapper}>
+                      <button
+                        type="button"
+                        className={styles.moreBtn}
+                        onClick={(e) => handleToggleMenu(e, product)}
+                        aria-label={`Действия с товаром ${product.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={activeMenuProduct?.id === product.id}
+                        aria-controls={
+                          activeMenuProduct?.id === product.id
+                            ? 'product-actions-menu'
+                            : undefined
+                        }
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

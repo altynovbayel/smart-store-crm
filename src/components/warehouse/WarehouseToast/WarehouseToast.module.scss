@@ -1,0 +1,59 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  padding: 12px 16px;
+  border-radius: $radius-md;
+  background-color: $color-success-bg;
+  border: 1px solid $color-success;
+  color: $color-success;
+  box-shadow: $shadow-card;
+  animation: toastFadeIn $transition-smooth;
+}
+
+@keyframes toastFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toastContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+}
+
+.toastIcon {
+  flex-shrink: 0;
+}
+
+.toastClose {
+  @include button-reset;
+  width: 24px;
+  height: 24px;
+  border-radius: $radius-full;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $color-success;
+  transition: background-color $transition-fast;
+
+  &:hover {
+    background-color: $color-success-light;
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}

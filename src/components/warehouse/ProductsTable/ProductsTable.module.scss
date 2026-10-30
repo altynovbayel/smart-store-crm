@@ -301,6 +301,29 @@
   }
 }
 
+.restoreBtn {
+  @include button-reset;
+  height: 32px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: $radius-sm;
+  border: 1px solid $color-success;
+  background-color: $color-success-bg;
+  color: $color-success;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+  transition: all $transition-fast;
+
+  &:hover {
+    background-color: $color-success-light;
+  }
+
+  &:focus-visible {
+    @include focus-ring($color-success);
+  }
+}
+
 .actionDropdownPortal {
   position: fixed;
   background-color: $color-surface;

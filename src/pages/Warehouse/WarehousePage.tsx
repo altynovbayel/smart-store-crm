@@ -7,6 +7,7 @@ import type {
   ProductSortField,
   ProductFormData,
   WarehouseCatalogProduct,
+  WarehouseRestoreResult,
 } from '../../types';
 import { exportProductsToCSV } from '../../utils/csvUtils';
 import {
@@ -27,8 +28,12 @@ import { ProductFormModal } from '../../components/warehouse/ProductFormModal/Pr
 import { AdjustStockModal } from '../../components/warehouse/AdjustStockModal/AdjustStockModal';
 import { ArchiveProductModal } from '../../components/warehouse/ArchiveProductModal/ArchiveProductModal';
 import { ProductMovementsModal } from '../../components/warehouse/ProductMovementsModal/ProductMovementsModal';
+import { RestoreProductModal } from '../../components/warehouse/RestoreProductModal/RestoreProductModal';
+import { WarehouseToast } from '../../components/warehouse/WarehouseToast/WarehouseToast';
 import { useWarehouseCatalog } from './hooks/useWarehouseCatalog';
 import { useProductMovements } from './hooks/useProductMovements';
+import { useWarehouseArchive } from './hooks/useWarehouseArchive';
+import { useWarehouseNotification } from './hooks/useWarehouseNotification';
 import styles from './WarehousePage.module.scss';
 
 const EMPTY_CATALOG: WarehouseCatalogProduct[] = [];
@@ -40,6 +45,8 @@ const EMPTY_CATALOG: WarehouseCatalogProduct[] = [];
  *   column, the «Стоимость склада» card and those movement lines are not rendered at all.
  * Mutations (create, update, adjust stock, archive) stay admin-only and go through the
  * transactional RPCs. NOTE: hiding UI is not a protection — the server role decides the data.
+ * Archive view (admin only): archived products via rpc_list_archived_products, restore via
+ * rpc_restore_product; the stat cards always describe the ACTIVE catalog.
  */
 export const WarehousePage = () => {
   const { user, isAdmin } = useAuth();
@@ -49,8 +56,6 @@ export const WarehousePage = () => {
   const { refresh: refreshCatalog, applyProduct } = catalogState;
   const catalog = catalogState.catalog;
   const serverProducts = catalog?.products ?? EMPTY_CATALOG;
-  const isLoadingProducts = catalogState.isLoading;
-  const loadError = catalogState.error;
 
   // Admin features need BOTH the client role and an admin catalog returned by the server
   const hasAdminCatalog = isAdmin && catalog?.role === 'admin';
@@ -60,6 +65,34 @@ export const WarehousePage = () => {
   const movementsResetKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
   const movements = useProductMovements(movementsResetKey);
   const { reloadIfOpen: reloadMovementsIfOpen } = movements;
+
+  const { notification, notify, dismissNotification, toastRef, setIsToastFocused } =
+    useWarehouseNotification(movementsResetKey);
+
+  // A restored product returns to the active catalog (and its stat cards) immediately
+  const handleRestored = useCallback(
+    (result: WarehouseRestoreResult) => {
+      applyProduct(result.product, 'upsert');
+      refreshCatalog();
+      notify(result.restored ? 'Товар восстановлен' : 'Товар уже был восстановлен');
+    },
+    [applyProduct, refreshCatalog, notify]
+  );
+
+  const archiveView = useWarehouseArchive({
+    userId,
+    isAdmin,
+    accessKey: movementsResetKey,
+    canUseArchive: canManage,
+    onRestored: handleRestored,
+  });
+  const { isArchiveMode } = archiveView;
+
+  // Data of the current view: the active catalog or the admin-only archive
+  const viewState = isArchiveMode ? archiveView.archive : catalogState;
+  const viewCatalog = viewState.catalog;
+  const viewProducts = viewCatalog?.products ?? EMPTY_CATALOG;
+  const showViewPurchasePrice = isArchiveMode ? viewCatalog?.role === 'admin' : showPurchasePrice;
 
   // Filters, sorting, pagination
   const [filters, setFilters] = useState<ProductFilters>({
@@ -122,14 +155,19 @@ export const WarehousePage = () => {
     [serverProducts, showPurchasePrice]
   );
 
+  // Archive is a product state, not a stock status: the status filter does not apply there
   const filteredProducts = useMemo(
-    () => filterCatalogProducts(serverProducts, filters),
-    [serverProducts, filters]
+    () =>
+      filterCatalogProducts(
+        viewProducts,
+        isArchiveMode ? { ...filters, status: 'all' } : filters
+      ),
+    [viewProducts, filters, isArchiveMode]
   );
 
   const effectiveSortConfig = useMemo(
-    () => getEffectiveSortConfig(sortConfig, showPurchasePrice),
-    [sortConfig, showPurchasePrice]
+    () => getEffectiveSortConfig(sortConfig, showViewPurchasePrice),
+    [sortConfig, showViewPurchasePrice]
   );
   const sortedProducts = useMemo(
     () => sortCatalogProducts(filteredProducts, effectiveSortConfig),
@@ -152,7 +190,7 @@ export const WarehousePage = () => {
 
   // Handlers
   const handleSort = (field: ProductSortField) => {
-    if (field === 'purchasePrice' && !showPurchasePrice) return;
+    if (field === 'purchasePrice' && !showViewPurchasePrice) return;
     setSortConfig((prev) => ({
       field,
       direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc',
@@ -168,8 +206,13 @@ export const WarehousePage = () => {
     setCurrentPage(1);
   };
 
+  const handleToggleArchive = () => {
+    archiveView.toggleViewMode();
+    setCurrentPage(1);
+  };
+
   const handleOpenAddModal = () => {
-    if (!hasAdminCatalog) return;
+    if (!hasAdminCatalog || isArchiveMode) return;
     setProductToEdit(null);
     setIsFormModalOpen(true);
   };
@@ -339,8 +382,12 @@ export const WarehousePage = () => {
 
   // CSV contains only the columns the current role sees (no purchase price for a cashier)
   const handleExportCSV = () => {
-    if (!catalog) return;
-    exportProductsToCSV(sortedProducts, showPurchasePrice, 'smart-store-sklad.csv');
+    if (!viewCatalog) return;
+    exportProductsToCSV(
+      sortedProducts,
+      showViewPurchasePrice,
+      isArchiveMode ? 'smart-store-arkhiv.csv' : 'smart-store-sklad.csv'
+    );
   };
 
   return (
@@ -348,11 +395,15 @@ export const WarehousePage = () => {
       {/* Page Header */}
       <header className={styles.pageHeader}>
         <div className={styles.headerTitles}>
-          <h1 className={styles.title}>Склад</h1>
-          <p className={styles.subtitle}>Управление товарами и остатками (Supabase)</p>
+          <h1 className={styles.title}>{isArchiveMode ? 'Архив товаров' : 'Склад'}</h1>
+          <p className={styles.subtitle}>
+            {isArchiveMode
+              ? 'Архивированные товары. Восстановите товар, чтобы вернуть его в каталог'
+              : 'Управление товарами и остатками (Supabase)'}
+          </p>
         </div>
 
-        {canManage && (
+        {canManage && !isArchiveMode && (
           <button
             type="button"
             data-add-product-btn
@@ -366,22 +417,31 @@ export const WarehousePage = () => {
         )}
       </header>
 
-      {/* Network / Query Error Banner */}
-      {loadError && (
+      {notification && (
+        <WarehouseToast
+          message={notification}
+          toastRef={toastRef}
+          onFocusChange={setIsToastFocused}
+          onDismiss={dismissNotification}
+        />
+      )}
+
+      {/* Network / Query Error Banner (of the current view) */}
+      {viewState.error && (
         <div className={styles.errorBanner} role="alert">
           <div className={styles.errorInfo}>
             <AlertCircle size={20} />
-            <span className={styles.errorText}>{loadError}</span>
+            <span className={styles.errorText}>{viewState.error}</span>
           </div>
           <button
             type="button"
             data-retry-warehouse-catalog-btn
             className={styles.retryBtn}
-            onClick={catalogState.retry}
-            disabled={isLoadingProducts}
+            onClick={viewState.retry}
+            disabled={viewState.isLoading}
           >
             <RotateCcw size={14} />
-            <span>{isLoadingProducts ? 'Загрузка...' : 'Повторить'}</span>
+            <span>{viewState.isLoading ? 'Загрузка...' : 'Повторить'}</span>
           </button>
         </div>
       )}
@@ -406,16 +466,20 @@ export const WarehousePage = () => {
         onResetFilters={handleResetFilters}
         onExport={handleExportCSV}
         onAddProduct={handleOpenAddModal}
-        canAddProduct={hasAdminCatalog}
+        canAddProduct={hasAdminCatalog && !isArchiveMode}
+        showStatusFilter={!isArchiveMode}
+        archiveToggle={canManage ? { isArchiveMode, onToggle: handleToggleArchive } : undefined}
       />
 
       {/* Products Table or Compact Loading State; nothing partial on failure */}
-      {isLoadingProducts && !catalog ? (
+      {viewState.isLoading && !viewCatalog ? (
         <div className={styles.tableLoadingCard} role="status" aria-live="polite">
           <div className={styles.spinner} aria-hidden="true" />
-          <span className={styles.loadingText}>Загрузка каталога товаров из Supabase...</span>
+          <span className={styles.loadingText}>
+            {isArchiveMode ? 'Загрузка архива товаров...' : 'Загрузка каталога товаров из Supabase...'}
+          </span>
         </div>
-      ) : catalog ? (
+      ) : viewCatalog ? (
         <ProductsTable
           products={paginatedProducts}
           sortConfig={effectiveSortConfig}
@@ -425,13 +489,20 @@ export const WarehousePage = () => {
           onViewMovements={movements.open}
           onArchiveProduct={handleOpenArchiveModal}
           onResetFilters={handleResetFilters}
-          canManageProducts={hasAdminCatalog}
-          showPurchasePrice={showPurchasePrice}
+          canManageProducts={hasAdminCatalog && !isArchiveMode}
+          showPurchasePrice={showViewPurchasePrice}
+          variant={isArchiveMode ? 'archived' : 'active'}
+          onRestoreProduct={archiveView.requestRestore}
+          emptyState={
+            isArchiveMode && viewProducts.length === 0
+              ? { title: 'Архив пуст', subtitle: 'Архивированных товаров нет.' }
+              : undefined
+          }
         />
       ) : null}
 
       {/* Pagination */}
-      {catalog && (
+      {viewCatalog && (
         <Pagination
           currentPage={safeCurrentPage}
           totalPages={totalPages}
@@ -473,6 +544,16 @@ export const WarehousePage = () => {
         error={archiveError}
         onClose={handleCloseArchiveModal}
         onConfirm={handleArchiveConfirm}
+      />
+
+      {/* Restore Archived Product Confirmation Modal */}
+      <RestoreProductModal
+        isOpen={Boolean(archiveView.productToRestore)}
+        product={archiveView.productToRestore}
+        isSubmitting={archiveView.isRestoreSubmitting}
+        error={archiveView.restoreError}
+        onClose={archiveView.cancelRestore}
+        onConfirm={archiveView.confirmRestore}
       />
 
       {/* Product Movements History Modal */}

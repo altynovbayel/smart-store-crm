@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { WarehouseCatalog, WarehouseCatalogProduct } from '../../../types';
+import type { WarehouseCatalog, WarehouseCatalogProduct, WarehouseViewMode } from '../../../types';
 import { warehouseApi } from '../../../api/warehouse';
 import { restoreFocusWithFallback } from '../../../utils/focusUtils';
 
@@ -19,6 +19,10 @@ export type CatalogLoadMode = 'primary' | 'background' | 'retry';
 interface UseWarehouseCatalogOptions {
   userId: string | null;
   isAdmin: boolean;
+  /** 'active' → rpc_list_products (default); 'archived' → admin-only rpc_list_archived_products. */
+  source?: WarehouseViewMode;
+  /** false: nothing is loaded and any loaded data is dropped (e.g. the archive view is closed). */
+  enabled?: boolean;
 }
 
 const initialState = (enabled: boolean): CatalogState => ({
@@ -33,11 +37,17 @@ const initialState = (enabled: boolean): CatalogState => ({
  *   and clears the catalog (admin data never stays visible after the role was lost);
  * - a failed load never shows a partial catalog: primary → no catalog + error; background
  *   (after a mutation) → the previous complete catalog stays visible next to the error;
- * - retry restores focus only if it was lost (retry button removed / disabled).
+ * - retry restores focus only if it was lost (retry button removed / disabled);
+ * - the source / enabled flag are part of the reset key: switching them aborts and clears too.
  */
-export const useWarehouseCatalog = ({ userId, isAdmin }: UseWarehouseCatalogOptions) => {
-  const enabled = Boolean(userId);
-  const resetKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}`;
+export const useWarehouseCatalog = ({
+  userId,
+  isAdmin,
+  source = 'active',
+  enabled: isSourceEnabled = true,
+}: UseWarehouseCatalogOptions) => {
+  const enabled = Boolean(userId) && isSourceEnabled;
+  const resetKey = `${userId ?? ''}|${isAdmin ? 'admin' : 'staff'}|${source}|${enabled ? 'on' : 'off'}`;
 
   const [state, setState] = useState<CatalogState>(() => initialState(enabled));
   const controllerRef = useRef<AbortController | null>(null);
@@ -73,7 +83,10 @@ export const useWarehouseCatalog = ({ userId, isAdmin }: UseWarehouseCatalogOpti
 
     let succeeded = false;
     try {
-      const res = await warehouseApi.listCatalog(controller.signal);
+      const res =
+        source === 'archived'
+          ? await warehouseApi.listArchivedCatalog(controller.signal)
+          : await warehouseApi.listCatalog(controller.signal);
       if (!isCurrent()) return;
       if (res.success) {
         succeeded = true;
@@ -110,7 +123,7 @@ export const useWarehouseCatalog = ({ userId, isAdmin }: UseWarehouseCatalogOpti
         });
       }
     }
-  }, []);
+  }, [source]);
 
   // Primary load per user / role; the cleanup aborts it on leave or switch
   useEffect(() => {

@@ -6,6 +6,7 @@ import type {
   WarehouseCatalogProduct,
   WarehouseMovementsResult,
   WarehouseMovementView,
+  WarehouseRestoreResult,
   CatalogAccessRole,
 } from '../../types';
 import { getCategoryLabel } from '../../utils/productUtils';
@@ -24,10 +25,12 @@ import { mapWarehouseError } from './warehouseErrorMapper';
 import {
   WarehouseCatalogDataError,
   isCursorBefore,
+  mapArchivedCatalogPage,
   mapCatalogPage,
   mapMovementsPage,
+  mapRestoreProductResult,
 } from './warehouseCatalogMappers';
-import type { MovementCursor } from './warehouseCatalogMappers';
+import type { CatalogPage, MovementCursor } from './warehouseCatalogMappers';
 
 /** Page size of the role-aware catalog / movement RPCs (server maximum, PostgREST max_rows). */
 export const WAREHOUSE_RPC_PAGE_SIZE = 1000;
@@ -41,6 +44,59 @@ const dataError = (err: WarehouseCatalogDataError): WarehouseApiResult<never> =>
   success: false,
   error: { message: err.message },
 });
+
+type CatalogPageResponse = PromiseLike<{ data: unknown; error: unknown }>;
+
+/**
+ * Loads ALL keyset pages (id ASC) of a role-aware catalog RPC:
+ * - every page is strictly validated by parsePage (exact field set of the returned role, ranges, order);
+ * - the role must stay the same across pages, the cursor must strictly increase, ids are unique;
+ * - all-or-nothing: any error returns a failure and no partial catalog.
+ * AbortError is re-thrown so callers can ignore cancelled loads.
+ */
+const loadAllCatalogPages = async (
+  signal: AbortSignal,
+  fetchPage: (afterId: string | null) => CatalogPageResponse,
+  parsePage: (data: unknown, limit: number) => CatalogPage
+): Promise<WarehouseApiResult<WarehouseCatalog>> => {
+  try {
+    const products: WarehouseCatalogProduct[] = [];
+    const seenIds = new Set<string>();
+    let role: CatalogAccessRole | null = null;
+    let afterId: string | null = null;
+
+    for (let pageIndex = 0; ; pageIndex++) {
+      if (pageIndex >= MAX_RPC_PAGES) throw new WarehouseCatalogDataError();
+
+      const { data, error } = await fetchPage(afterId);
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (error) return { success: false, error: mapWarehouseError(error) };
+
+      const page = parsePage(data, WAREHOUSE_RPC_PAGE_SIZE);
+      if (role !== null && page.role !== role) throw new WarehouseCatalogDataError();
+      role = page.role;
+
+      for (const product of page.products) {
+        // Keyset order: every row must follow the previous cursor; a repeat means a broken page
+        if (seenIds.has(product.id) || (afterId !== null && !(product.id > afterId))) {
+          throw new WarehouseCatalogDataError();
+        }
+        seenIds.add(product.id);
+        products.push(product);
+      }
+
+      if (page.nextAfterId === null) break;
+      afterId = page.nextAfterId;
+    }
+
+    if (role === null) throw new WarehouseCatalogDataError();
+    return { success: true, data: { role, products } };
+  } catch (err: unknown) {
+    if (isAbortError(err)) throw err;
+    if (err instanceof WarehouseCatalogDataError) return dataError(err);
+    return { success: false, error: mapWarehouseError(err) };
+  }
+};
 
 export type {
   CreateProductInput,
@@ -67,50 +123,43 @@ export const warehouseApi = {
    * AbortError is re-thrown so callers can ignore cancelled loads.
    */
   async listCatalog(signal: AbortSignal): Promise<WarehouseApiResult<WarehouseCatalog>> {
-    try {
-      const products: WarehouseCatalogProduct[] = [];
-      const seenIds = new Set<string>();
-      let role: CatalogAccessRole | null = null;
-      let afterId: string | null = null;
-
-      for (let pageIndex = 0; ; pageIndex++) {
-        if (pageIndex >= MAX_RPC_PAGES) throw new WarehouseCatalogDataError();
+    const result = await loadAllCatalogPages(
+      signal,
+      (afterId) => {
         const args: Database['public']['Functions']['rpc_list_products']['Args'] = {
           p_include_archived: false,
           p_limit: WAREHOUSE_RPC_PAGE_SIZE,
         };
         if (afterId !== null) args.p_after_id = afterId;
-
-        const { data, error } = await supabase.rpc('rpc_list_products', args).abortSignal(signal);
-        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        if (error) return { success: false, error: mapWarehouseError(error) };
-
-        const page = mapCatalogPage(data, WAREHOUSE_RPC_PAGE_SIZE);
-        if (role !== null && page.role !== role) throw new WarehouseCatalogDataError();
-        role = page.role;
-
-        for (const product of page.products) {
-          // Keyset order: every row must follow the previous cursor; a repeat means a broken page
-          if (seenIds.has(product.id) || (afterId !== null && !(product.id > afterId))) {
-            throw new WarehouseCatalogDataError();
-          }
-          seenIds.add(product.id);
-          products.push(product);
-        }
-
-        if (page.nextAfterId === null) break;
-        afterId = page.nextAfterId;
-      }
-
-      if (role === null) throw new WarehouseCatalogDataError();
-      // Archived rows are never requested; a server returning one is inconsistent
-      if (products.some((p) => p.isArchived)) throw new WarehouseCatalogDataError();
-      return { success: true, data: { role, products } };
-    } catch (err: unknown) {
-      if (isAbortError(err)) throw err;
-      if (err instanceof WarehouseCatalogDataError) return dataError(err);
-      return { success: false, error: mapWarehouseError(err) };
+        return supabase.rpc('rpc_list_products', args).abortSignal(signal);
+      },
+      mapCatalogPage
+    );
+    // Archived rows are never requested; a server returning one is inconsistent
+    if (result.success && result.data.products.some((p) => p.isArchived)) {
+      return dataError(new WarehouseCatalogDataError());
     }
+    return result;
+  },
+
+  /**
+   * Admin-only archive via rpc_list_archived_products (migration 20261030100000): the same
+   * all-pages, all-or-nothing load as listCatalog; every page must be an admin page of archived
+   * rows only. A cashier / inactive user gets a 42501 error from the server.
+   * AbortError is re-thrown so callers can ignore cancelled loads.
+   */
+  async listArchivedCatalog(signal: AbortSignal): Promise<WarehouseApiResult<WarehouseCatalog>> {
+    return loadAllCatalogPages(
+      signal,
+      (afterId) => {
+        const args: Database['public']['Functions']['rpc_list_archived_products']['Args'] = {
+          p_limit: WAREHOUSE_RPC_PAGE_SIZE,
+        };
+        if (afterId !== null) args.p_after_id = afterId;
+        return supabase.rpc('rpc_list_archived_products', args).abortSignal(signal);
+      },
+      mapArchivedCatalogPage
+    );
   },
 
   /**
@@ -305,6 +354,29 @@ export const warehouseApi = {
       const product = mapProductRowToProduct(data);
       return { success: true, data: product };
     } catch (err: unknown) {
+      return { success: false, error: mapWarehouseError(err) };
+    }
+  },
+
+  /**
+   * Restores an archived product via the admin-only, idempotent rpc_restore_product
+   * (migration 20261030100000). Only is_archived changes on the server; stock, prices and
+   * movements stay as they are and no stock movement is created. The response is strictly
+   * validated; restored = false means the product was already active.
+   */
+  async restoreProduct(productId: string): Promise<WarehouseApiResult<WarehouseRestoreResult>> {
+    try {
+      const { data, error } = await supabase.rpc('rpc_restore_product', {
+        p_product_id: productId,
+      });
+
+      if (error) {
+        return { success: false, error: mapWarehouseError(error) };
+      }
+
+      return { success: true, data: mapRestoreProductResult(data, productId) };
+    } catch (err: unknown) {
+      if (err instanceof WarehouseCatalogDataError) return dataError(err);
       return { success: false, error: mapWarehouseError(err) };
     }
   },

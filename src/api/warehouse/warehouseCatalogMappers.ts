@@ -4,6 +4,7 @@ import type {
   StockStatus,
   WarehouseCatalogProduct,
   WarehouseMovementView,
+  WarehouseRestoreResult,
 } from '../../types';
 import { minorToSom, MAX_SAFE_PRICE_MINOR } from '../../utils/moneyUtils';
 import { calculateStockStatus, getIconTypeByCategory, parseProductCategory } from '../../utils/productUtils';
@@ -182,6 +183,32 @@ export const mapCatalogPage = (data: unknown, limit: number): CatalogPage => {
   }
 
   return { role, products, nextAfterId };
+};
+
+/**
+ * Parses a rpc_list_archived_products page (migration 20261030100000): the admin catalog page
+ * contract where every row is archived. A cashier role or an active row rejects the whole page.
+ */
+export const mapArchivedCatalogPage = (data: unknown, limit: number): CatalogPage => {
+  const page = mapCatalogPage(data, limit);
+  if (page.role !== 'admin' || page.products.some((p) => !p.isArchived)) {
+    throw new WarehouseCatalogDataError();
+  }
+  return page;
+};
+
+/**
+ * Parses rpc_restore_product: exactly { restored, product }, where product is an admin catalog
+ * row of the requested product and is active. Anything else rejects the whole response.
+ */
+export const mapRestoreProductResult = (data: unknown, productId: string): WarehouseRestoreResult => {
+  const root = readRecord(data);
+  assertExactKeys(root, ['restored', 'product']);
+  const restored = root.restored;
+  if (typeof restored !== 'boolean') throw new WarehouseCatalogDataError();
+  const product = mapCatalogProductRow(root.product, 'admin');
+  if (product.id !== productId || product.isArchived) throw new WarehouseCatalogDataError();
+  return { restored, product };
 };
 
 /** Movement cursor exactly as sent by the server (strings are passed back unchanged). */

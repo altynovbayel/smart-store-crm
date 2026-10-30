@@ -6,6 +6,8 @@ import {
   Plus,
   X,
   RotateCcw,
+  Archive,
+  ArrowLeft,
 } from 'lucide-react';
 import type { StockStatus, ProductFilters } from '../../../types';
 import { PRODUCT_CATEGORIES } from '../../../types';
@@ -19,6 +21,13 @@ export interface WarehouseToolbarProps {
   onExport: () => void;
   onAddProduct: () => void;
   canAddProduct?: boolean;
+  /** Stock status filter; hidden in the archive view (archive is a product state, not a stock status). */
+  showStatusFilter?: boolean;
+  /** «Архив» / «Вернуться к активным» toggle; not rendered when undefined (non-admin). */
+  archiveToggle?: {
+    isArchiveMode: boolean;
+    onToggle: () => void;
+  };
 }
 
 export const WarehouseToolbar = ({
@@ -28,13 +37,15 @@ export const WarehouseToolbar = ({
   onExport,
   onAddProduct,
   canAddProduct = true,
+  showStatusFilter = true,
+  archiveToggle,
 }: WarehouseToolbarProps) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const hasActiveFilters =
     Boolean(filters.searchQuery.trim()) ||
     filters.category !== 'all' ||
-    filters.status !== 'all';
+    (showStatusFilter && filters.status !== 'all');
 
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     onFilterChange({
@@ -116,20 +127,22 @@ export const WarehouseToolbar = ({
           </select>
         </div>
 
-        {/* Status filter */}
-        <div className={styles.selectWrapper}>
-          <select
-            className={styles.select}
-            value={filters.status}
-            onChange={handleStatusChange}
-            aria-label="Фильтр по статусу"
-          >
-            <option value="all">Все статусы</option>
-            <option value="in_stock">В наличии</option>
-            <option value="low_stock">Мало</option>
-            <option value="out_of_stock">Нет в наличии</option>
-          </select>
-        </div>
+        {/* Status filter (not applicable to the archive view) */}
+        {showStatusFilter && (
+          <div className={styles.selectWrapper}>
+            <select
+              className={styles.select}
+              value={filters.status}
+              onChange={handleStatusChange}
+              aria-label="Фильтр по статусу"
+            >
+              <option value="all">Все статусы</option>
+              <option value="in_stock">В наличии</option>
+              <option value="low_stock">Мало</option>
+              <option value="out_of_stock">Нет в наличии</option>
+            </select>
+          </div>
+        )}
 
         {/* Reset filter button if active */}
         {hasActiveFilters && (
@@ -157,6 +170,23 @@ export const WarehouseToolbar = ({
           <span className={styles.btnText}>Фильтры</span>
           {hasActiveFilters && <span className={styles.filterDot} />}
         </button>
+
+        {/* Archive view toggle (admin only) */}
+        {archiveToggle && (
+          <button
+            type="button"
+            data-warehouse-archive-toggle
+            className={`${styles.outlineButton} ${archiveToggle.isArchiveMode ? styles.btnActive : ''}`}
+            onClick={archiveToggle.onToggle}
+            title={archiveToggle.isArchiveMode ? 'Вернуться к активным товарам' : 'Показать архивные товары'}
+            aria-label={archiveToggle.isArchiveMode ? 'Вернуться к активным' : 'Архив'}
+          >
+            {archiveToggle.isArchiveMode ? <ArrowLeft size={16} /> : <Archive size={16} />}
+            <span className={styles.btnText}>
+              {archiveToggle.isArchiveMode ? 'Вернуться к активным' : 'Архив'}
+            </span>
+          </button>
+        )}
 
         {/* Export to CSV */}
         <button

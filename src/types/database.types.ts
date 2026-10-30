@@ -747,6 +747,10 @@ export type Database = {
         Args: never
         Returns: boolean
       }
+      rpc_list_archived_products: {
+        Args: { p_after_id?: string; p_limit?: number }
+        Returns: Json
+      }
       rpc_list_income_receipts: {
         Args: {
           p_after_id?: string
@@ -790,6 +794,10 @@ export type Database = {
           p_sold_before?: string
           p_sold_from?: string
         }
+        Returns: Json
+      }
+      rpc_restore_product: {
+        Args: { p_product_id: string }
         Returns: Json
       }
       rpc_update_product: {
